@@ -1691,3 +1691,530 @@ interface CampaignState {
 4. After a game, dashboard shows correct history
 5. Map timeline slider shows accumulated changes
 6. Past game results display correctly
+
+---
+
+# PART 3: COMPREHENSIVE TESTING SPECIFICATION
+
+---
+
+## 25. Testing Strategy Overview
+
+This section defines the complete testing strategy for the Risk Legacy application, covering unit tests, integration tests, end-to-end tests, security tests, and performance tests.
+
+### 25.1 Testing Principles
+
+- **Test-Driven Development**: Write tests before implementation for critical game logic
+- **Comprehensive Coverage**: Aim for >80% code coverage on game engine
+- **Automated CI/CD**: All tests run on every pull request
+- **Isolated Tests**: Each test should be independent and repeatable
+- **Fast Feedback**: Unit tests should complete in <30 seconds
+
+### 25.2 Testing Stack
+
+| Tool | Purpose | Location |
+|------|---------|----------|
+| **Vitest** | Unit & integration testing | `server/tests/`, `client/tests/` |
+| **Testing Library** | React component testing | `client/tests/unit/components/` |
+| **Playwright** | End-to-end browser testing | `tests/e2e/` |
+| **supertest + socket.io-client** | WebSocket integration | `server/tests/integration/` |
+| **k6** | Load testing | `tests/performance/` |
+
+### 25.3 Test Directory Structure
+
+```
+risk_legacy_2/
+├── server/
+│   └── tests/
+│       ├── unit/
+│       │   ├── combat.test.ts          # Dice, modifiers, casualties
+│       │   ├── reinforcement.test.ts   # Troop calculation, card trading
+│       │   ├── map.test.ts             # Adjacency, pathfinding, continents
+│       │   ├── stateMachine.test.ts    # Phase transitions, validation
+│       │   ├── cards.test.ts           # Deck, drawing, trading
+│       │   └── campaign/
+│       │       └── persistence.test.ts # Cross-game state, packets
+│       ├── integration/
+│       │   ├── gameFlow.test.ts        # Complete game lifecycle
+│       │   ├── websocket.test.ts       # Event emission, reconnection
+│       │   └── multiplayer.test.ts     # Turn enforcement, elimination
+│       └── helpers/
+│           ├── testServer.ts           # Mock server factory
+│           └── testUtils.ts            # Shared utilities
+├── client/
+│   └── tests/
+│       └── unit/
+│           ├── components/
+│           │   ├── CombatModal.test.tsx
+│           │   ├── GameBoard.test.tsx
+│           │   └── CardHand.test.tsx
+│           └── store/
+│               └── gameStore.test.ts
+└── tests/
+    ├── e2e/
+    │   └── fullGame.test.ts            # Browser-based full flow
+    ├── security/
+    │   └── validation.test.ts          # Auth, injection, rate limiting
+    └── performance/
+        └── load.test.ts                # Concurrent users, throughput
+```
+
+---
+
+## 26. Unit Tests (Backend Engine)
+
+### 26.1 Combat System Tests (`combat.test.ts`)
+
+**Test Categories:**
+
+| Category | Tests | Priority |
+|----------|-------|----------|
+| Dice Rolling | Distribution, bounds [1-6], sorting | High |
+| Modifier Application | Scars, fortifications, faction powers | High |
+| Modifier Order | Scar → Fortification → Faction → Missile | High |
+| Modifier Bounds | Values clamped to [1, 6] | High |
+| Missile System | Set to 6, mark unmodifiable, decrement count | High |
+| Combat Resolution | Highest vs highest, ties to defender | High |
+| Faction Powers | All 10 powers tested individually | High |
+| Fortification Degradation | +1 damage on 3-dice attack, destroy at 10 | Medium |
+| Conquest Movement | Min = dice used, max = troops - 1 | Medium |
+
+**Critical Test Cases:**
+
+```typescript
+// Modifier stacking: Bunker + Fortification
+it('should stack bunker scar with fortification');
+// Expected: +1 (bunker) to highest, +1 (fort) to both
+
+// Supreme Firepower: Triple same value
+it('should trigger 3 instant casualties on triple');
+// Expected: defenderLosses = 3, bypasses normal resolution
+
+// Missile on unmodifiable die
+it('should reject missile on already-unmodifiable die');
+// Expected: Error thrown, missile not consumed
+```
+
+### 26.2 Reinforcement System Tests (`reinforcement.test.ts`)
+
+**Test Categories:**
+
+| Category | Tests | Priority |
+|----------|-------|----------|
+| Base Calculation | `floor((territories + population) / 3)` | High |
+| Minimum Troops | Always ≥3 | High |
+| Continent Bonuses | All 6 continents verified | High |
+| Card Trade for Troops | 2→1, 3→2, ..., 10+→10 | High |
+| Card Trade for Stars | Exactly 4 cards required | High |
+| Faction Powers | Recruitment Offices, Established | Medium |
+
+**Critical Test Cases:**
+
+```typescript
+// Minimum enforcement
+it('should enforce minimum of 3 troops');
+// Input: 1 territory, 0 population
+// Expected: 3 troops (not 0)
+
+// Continent bonus stacking
+it('should sum bonuses for multiple controlled continents');
+// Input: South America (2) + Australia (2)
+// Expected: +4 total bonus
+```
+
+### 26.3 Map System Tests (`map.test.ts`)
+
+**Test Categories:**
+
+| Category | Tests | Priority |
+|----------|-------|----------|
+| Adjacency Validation | All 42 territories, bidirectional | High |
+| Sea Connections | Alaska-Kamchatka, Greenland-Iceland, etc. | High |
+| Pathfinding | Connected territories only | High |
+| Path Blocking | Enemy/unoccupied territories block | High |
+| Continent Control | Full ownership required | Medium |
+| Maneuver Validation | Path + troop limits | Medium |
+| Desert Nomads | Path through ONE enemy | Low |
+
+**Critical Test Cases:**
+
+```typescript
+// All territories have valid neighbors
+it('should verify all 42 territories have bidirectional adjacency');
+// For each territory, verify all neighbors list this territory
+
+// Path blocked by enemy
+it('should not path through enemy territories');
+// Setup: A(player1) - B(player2) - C(player1)
+// Expected: findPath(A, C) returns null
+```
+
+### 26.4 State Machine Tests (`stateMachine.test.ts`)
+
+**Test Categories:**
+
+| Category | Tests | Priority |
+|----------|-------|----------|
+| Setup Flow | Scar → Roll → Faction → HQ | High |
+| Turn Flow | Recruit → Attack → Maneuver → End | High |
+| Combat Substates | Idle → Declare → Dice → Missile → Resolve | High |
+| Action Validation | NOT_YOUR_TURN, INVALID_PHASE | High |
+| Victory Detection | 4 stars, last standing | High |
+| Timeout Handling | Defender dice, missile window | Medium |
+| Elimination | Territory loss, card transfer, rejoin | Medium |
+
+**Critical Test Cases:**
+
+```typescript
+// Victory triggers immediately
+it('should trigger victory immediately, even mid-combat');
+// Setup: Player at 3 stars, capturing HQ
+// Expected: status = 'finished' before troop movement
+
+// Invalid phase action
+it('should reject actions invalid for current phase');
+// Setup: phase = 'RECRUIT'
+// Action: declare_attack
+// Expected: error = 'INVALID_PHASE'
+```
+
+### 26.5 Card System Tests (`cards.test.ts`)
+
+**Test Categories:**
+
+| Category | Tests | Priority |
+|----------|-------|----------|
+| Deck Creation | 42 territory + 10 coin = 52 cards | High |
+| Draw Eligibility | Conquest required, not expansion | High |
+| Face-Up Priority | Matching territory > coin pile | Medium |
+| Trade Validation | Coin sum, card ownership | Medium |
+| Card Destruction | Permanent removal from deck | Low |
+| Card Upgrade | +1 coin, max 6 | Low |
+
+---
+
+## 27. Unit Tests (Frontend)
+
+### 27.1 Combat Modal Tests (`CombatModal.test.tsx`)
+
+**Test Categories:**
+
+| Category | Tests |
+|----------|-------|
+| Dice Selection | Count limits, disable invalid options |
+| Dice Display | Values, modifiers, sorting |
+| Missile Window | Timer, button enable/disable |
+| Combat Results | Win/lose indicators, casualties |
+| Troop Movement | Slider bounds, confirmation |
+| Accessibility | ARIA labels, keyboard navigation |
+
+### 27.2 Game Board Tests (`GameBoard.test.tsx`)
+
+**Test Categories:**
+
+| Category | Tests |
+|----------|-------|
+| Territory Rendering | All 42 paths, colors, troop counts |
+| Markers | Scars, cities, HQ, fortification |
+| Hover Interactions | Tooltip display, content |
+| Click Interactions | Selection, attack source/target |
+| Phase Highlighting | Placeable, attackable, connected |
+| Zoom/Pan | Scroll zoom, drag pan, reset |
+
+### 27.3 Game Store Tests (`gameStore.test.ts`)
+
+**Test Categories:**
+
+| Category | Tests |
+|----------|-------|
+| State Sync | Server sync, delta updates |
+| Troop Deployment | Validation, history tracking |
+| Attack Actions | Source/target, dice selection |
+| Maneuver Actions | Path validation, execution |
+| Card Management | Selection, coin calculation |
+| Selectors | Current player, territories, preview |
+
+---
+
+## 28. Integration Tests
+
+### 28.1 Game Flow Tests (`gameFlow.test.ts`)
+
+**Scenarios:**
+
+1. **Complete Game Flow**: Lobby → Setup → Active → Victory
+2. **Turn Cycle**: Correct player rotation, skip eliminated
+3. **Reinforcement**: Base + continent + card bonuses
+4. **Combat Sequence**: Declare → Dice → Missile → Resolve → Move
+5. **Victory Conditions**: 4 stars, last standing, mid-combat
+
+### 28.2 WebSocket Tests (`websocket.test.ts`)
+
+**Scenarios:**
+
+1. **Event Emission**: game_state, delta, prompts
+2. **Broadcast**: All players receive updates
+3. **Targeted Events**: prompt:defend to defender only
+4. **Reconnection**: State restoration, pending timeouts
+5. **Timeout Handling**: Defender dice, missile window
+
+### 28.3 Multiplayer Tests (`multiplayer.test.ts`)
+
+**Scenarios:**
+
+1. **Turn Enforcement**: Only active player can act
+2. **Player Interactions**: Combat prompts, missile usage
+3. **Elimination**: Territory loss, card transfer, rejoin
+4. **Player Count**: 3, 4, 5 player games
+5. **Spectator Mode**: Eliminated player observation
+
+---
+
+## 29. End-to-End Tests (`fullGame.test.ts`)
+
+**Browser-based tests using Playwright:**
+
+| Flow | Tests |
+|------|-------|
+| Lobby | Create game, join via code, ready up |
+| Setup | Faction selection, HQ placement |
+| Turn | Reinforce → Attack → Maneuver cycle |
+| Combat | Full modal flow with dice and results |
+| Victory | Win screen display |
+| Real-Time Sync | Cross-client state updates |
+| Reconnection | State preservation |
+| Accessibility | Keyboard navigation, ARIA |
+| Responsive | Mobile and tablet viewports |
+
+---
+
+## 30. Security Tests (`validation.test.ts`)
+
+### 30.1 Authentication & Authorization
+
+| Test | Expected |
+|------|----------|
+| Request without session | UNAUTHORIZED |
+| Expired session token | SESSION_EXPIRED |
+| Impersonate another player | UNAUTHORIZED |
+| Act when not your turn | NOT_YOUR_TURN |
+| Act on enemy territory | INVALID_TERRITORY |
+| Non-host starts game | NOT_HOST |
+
+### 30.2 Input Validation
+
+| Test | Expected |
+|------|----------|
+| Invalid territory ID (-1, 42, null) | INVALID_TERRITORY |
+| Invalid troop count (0, -1, 1000) | Rejected |
+| Invalid dice count (0, 4) | Rejected |
+| XSS in campaign name | Sanitized |
+| Overly long strings | NAME_TOO_LONG |
+| SQL injection attempts | No database error |
+
+### 30.3 Rate Limiting
+
+| Test | Expected |
+|------|----------|
+| 100 rapid requests | Some RATE_LIMITED |
+| 20 rapid game creations | Some RATE_LIMITED |
+
+### 30.4 State Manipulation
+
+| Test | Expected |
+|------|----------|
+| Direct state modification | INVALID_ACTION |
+| Forged card IDs in trade | CARD_NOT_OWNED |
+| Invalid phase transition | INVALID_PHASE |
+
+---
+
+## 31. Performance Tests (`load.test.ts`)
+
+### 31.1 Benchmarks
+
+| Metric | Target | Test |
+|--------|--------|------|
+| Concurrent Connections | 100 | Connect 100 clients |
+| Game Creation | 10 concurrent | Create 10 games simultaneously |
+| Actions/Second | >100 | 100 deploy actions |
+| Latency (avg) | <50ms | Ping under load |
+| Latency (p95) | <100ms | Ping under load |
+| Broadcast Time | <500ms | 50 client broadcast |
+| Memory Growth | <50MB per 20 games | Create/finish games |
+
+### 31.2 Stress Tests
+
+| Test | Expected |
+|------|----------|
+| 100 connect/disconnect cycles | >95% success |
+| 1000 message flood | Connection survives |
+| Rapid state saves | >10 writes/sec |
+| Campaign history query | <200ms |
+
+---
+
+## 32. Test Coverage Requirements
+
+### 32.1 Minimum Coverage
+
+| Component | Coverage Target |
+|-----------|-----------------|
+| Combat Engine | 95% |
+| State Machine | 90% |
+| Reinforcement Logic | 90% |
+| Card System | 85% |
+| Map/Pathfinding | 85% |
+| Campaign Persistence | 80% |
+| React Components | 70% |
+| Store | 80% |
+
+### 32.2 Critical Path Coverage
+
+These paths MUST have 100% test coverage:
+
+1. Combat resolution (dice → modifier → casualty)
+2. Victory detection (4 stars, elimination)
+3. Turn validation (NOT_YOUR_TURN)
+4. State transitions (phase → phase)
+5. Authentication checks
+
+---
+
+## 33. CI/CD Integration
+
+### 33.1 GitHub Actions Workflow
+
+```yaml
+name: Test Suite
+on: [push, pull_request]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npm run test:coverage
+      - uses: codecov/codecov-action@v3
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm run test:integration
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx playwright install
+      - run: npm run test:e2e
+```
+
+### 33.2 Pre-Commit Hooks
+
+```json
+{
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm run test:unit -- --changed",
+      "pre-push": "npm run test:integration"
+    }
+  }
+}
+```
+
+---
+
+## 34. Test Data & Fixtures
+
+### 34.1 Territory Data
+
+Full territory adjacency data is available in `server/tests/fixtures/territories.json`.
+
+### 34.2 Game State Snapshots
+
+Pre-configured game states for testing:
+
+| Fixture | Description |
+|---------|-------------|
+| `lobby.json` | 3 players in lobby |
+| `setup-faction.json` | Mid-faction selection |
+| `active-recruit.json` | Turn start, reinforcement phase |
+| `active-attack.json` | Attack phase, no combat |
+| `active-combat.json` | Mid-combat, awaiting defender |
+| `near-victory.json` | Player at 3 stars |
+| `elimination.json` | Player about to be eliminated |
+
+---
+
+## 35. Running Tests
+
+### 35.1 Commands
+
+```bash
+# All unit tests
+npm run test:unit
+
+# All integration tests
+npm run test:integration
+
+# E2E tests (requires browser)
+npm run test:e2e
+
+# Security tests
+npm run test:security
+
+# Performance tests (long running)
+npm run test:perf
+
+# Full suite
+npm run test
+
+# Coverage report
+npm run test:coverage
+
+# Watch mode during development
+npm run test:watch
+```
+
+### 35.2 Environment Variables
+
+```env
+TEST_SERVER_PORT=3001
+TEST_DATABASE_URL=postgresql://test:test@localhost:5432/risk_test
+TEST_LOG_LEVEL=error
+CI=true  # Disables watch mode, enables headless
+```
+
+---
+
+## 36. Test Maintenance
+
+### 36.1 When to Update Tests
+
+- **New feature**: Add tests BEFORE implementation
+- **Bug fix**: Add regression test BEFORE fix
+- **Refactor**: Ensure existing tests still pass
+- **Rule change**: Update game logic tests
+
+### 36.2 Flaky Test Policy
+
+- Flaky tests must be fixed within 24 hours
+- If not fixable, quarantine with `it.skip` and create issue
+- Never ignore CI failures
+
+### 36.3 Test Review Checklist
+
+- [ ] Tests cover happy path
+- [ ] Tests cover error cases
+- [ ] Tests cover edge cases
+- [ ] Tests are independent (no shared state)
+- [ ] Tests have clear assertions
+- [ ] Tests run in <1 second (unit) / <10 seconds (integration)
