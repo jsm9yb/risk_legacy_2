@@ -1408,3 +1408,286 @@ src/
    - Conquest troop movement limits
    - Card trading thresholds
 5. **Responsive**: Test on different screen sizes
+
+---
+
+## 22. Campaign Management UI
+
+This section covers the screens for campaign creation, joining, lobby, and dashboard - the flows that happen before and between games.
+
+### 22.1 Authentication
+
+- **Provider**: Google OAuth only
+- **Flow**: Login button → Google consent → redirect back with session
+- **Components**: `LoginScreen.tsx`, `AuthProvider.tsx`
+
+### 22.2 Home Dashboard
+
+Entry point after login. Three main sections:
+
+```
++------------------------------------------------------------------+
+|  RISK LEGACY                                    [User Avatar] [Logout]
++------------------------------------------------------------------+
+|                                                                    |
+|  +------------------+  +------------------+  +------------------+  |
+|  |                  |  |                  |  |                  |  |
+|  |  CREATE NEW      |  |  JOIN CAMPAIGN   |  |  MY CAMPAIGNS    |  |
+|  |  CAMPAIGN        |  |                  |  |                  |  |
+|  |  [+ icon]        |  |  [link icon]     |  |  [list icon]     |  |
+|  |                  |  |                  |  |                  |  |
+|  +------------------+  +------------------+  +------------------+  |
+|                                                                    |
+|  RECENT CAMPAIGNS                                                  |
+|  +--------------------------------------------------------------+  |
+|  | Friday Night Wars    | Game 7/15 | 4 players | Your turn     |  |
+|  | Office League        | Game 2/15 | 5 players | Waiting       |  |
+|  +--------------------------------------------------------------+  |
+|                                                                    |
++------------------------------------------------------------------+
+```
+
+### 22.3 Campaign Creation Modal
+
+Opens when clicking "Create New Campaign".
+
+**Fields**:
+- Campaign Name (text input, required)
+- Player Count (dropdown: 3, 4, or 5)
+- Turn Timer (dropdown: Off, 2 min, 5 min, 10 min)
+
+```
++------------------------------------------+
+|  CREATE CAMPAIGN                    [X]  |
++------------------------------------------+
+|                                          |
+|  Campaign Name                           |
+|  [____________________________________]  |
+|                                          |
+|  Number of Players                       |
+|  [3-5 dropdown_______________]           |
+|                                          |
+|  Turn Timer                              |
+|  [Off / 2min / 5min / 10min__]           |
+|                                          |
+|              [Cancel]  [Create Campaign] |
++------------------------------------------+
+```
+
+### 22.4 Join Campaign
+
+Simple invite code entry (POC approach):
+
+```
++------------------------------------------+
+|  JOIN CAMPAIGN                      [X]  |
++------------------------------------------+
+|                                          |
+|  Enter the invite code from your host:   |
+|                                          |
+|  [________________________]              |
+|                                          |
+|              [Cancel]  [Join]            |
++------------------------------------------+
+```
+
+### 22.5 Campaign Lobby (Pre-First-Game)
+
+Where players gather before the campaign starts. Shows map preview and faction info.
+
+```
++------------------------------------------------------------------+
+|  CAMPAIGN LOBBY: "Friday Night Wars"                              |
++------------------------------------------------------------------+
+|                                                                    |
+|  PLAYERS (3/5)                        |  WORLD MAP PREVIEW        |
+|  +------------------------------+     |  +---------------------+   |
+|  | 1. Jordan (Host)      READY  |     |  |                     |   |
+|  | 2. Alex               READY  |     |  |  [Miniature map     |   |
+|  | 3. Sam                -----  |     |  |   showing starting  |   |
+|  | 4. Waiting...                |     |  |   state]            |   |
+|  | 5. Waiting...                |     |  |                     |   |
+|  +------------------------------+     |  +---------------------+   |
+|                                        |                           |
+|  Invite Code: ABC-XYZ-123             |  FACTIONS                  |
+|  [Copy Link]                          |  - Die Mechaniker          |
+|                                        |  - Enclave of the Bear    |
+|  SETTINGS                             |  - Imperial Balkania       |
+|  Turn Timer: 5 minutes                |  - Khan Industries         |
+|  Players: 5                           |  - Saharan Republic        |
+|                                        |                           |
+|  [Leave Campaign]    [Ready Up] / [Start Campaign] (host only)    |
++------------------------------------------------------------------+
+```
+
+### 22.6 Campaign Dashboard (Between Games)
+
+Main hub for ongoing campaigns. Integrates game history, map evolution, and ready-up.
+
+```
++------------------------------------------------------------------+
+|  FRIDAY NIGHT WARS                              Game 7 of 15      |
++------------------------------------------------------------------+
+|                                                                    |
+|  MAP EVOLUTION                                                     |
+|  +--------------------------------------------------------------+ |
+|  |  [Game 1] [Game 2] [Game 3] [Game 4] [Game 5] [Game 6] [NOW] | |
+|  |  <=================== Timeline Slider ===================>    | |
+|  +--------------------------------------------------------------+ |
+|  |                                                                | |
+|  |  [Interactive map showing state at selected game point]       | |
+|  |  - Cities placed (with names)                                 | |
+|  |  - Scars on territories                                       | |
+|  |  - Named continents                                           | |
+|  |                                                                | |
+|  +--------------------------------------------------------------+ |
+|                                                                    |
+|  GAME HISTORY                        |  STANDINGS                  |
+|  +-------------------------------+   |  +------------------------+ |
+|  | Game 6: Sam (Khan) won        |   |  | 1. Sam      - 3 wins   | |
+|  |   Stars: 4 | Territories: 18  |   |  | 2. Jordan   - 2 wins   | |
+|  |   Duration: 1h 45m            |   |  | 3. Alex     - 1 win    | |
+|  +-------------------------------+   |  | 4. Jo       - 0 wins   | |
+|  | Game 5: Jordan (Bear) won     |   |  +------------------------+ |
+|  |   Stars: 4 | Territories: 22  |   |                            |
+|  +-------------------------------+   |  PACKET STATUS              |
+|  | [View More...]                |   |  [x] Second Win unlocked   |
+|                                      |  [ ] 9 Minor Cities         |
+|  PLAYERS                             |  [ ] Faction Eliminated     |
+|  +-------------------------------+   |                            |
+|  | Jordan (Bear)         READY   |   |                            |
+|  | Sam (Khan)           ------   |   |                            |
+|  | Alex (Mechaniker)    READY    |   |                            |
+|  | Jo (Saharan)         ------   |   |                            |
+|  +-------------------------------+   |                            |
+|                                                                    |
+|  [Leave Campaign]                      [Ready for Game 7]          |
+|                                        (Starts when all ready)     |
++------------------------------------------------------------------+
+```
+
+### 22.7 Game Result Detail (Modal)
+
+When clicking a past game in history:
+
+```
++------------------------------------------+
+|  GAME 6 RESULTS                     [X]  |
++------------------------------------------+
+|                                          |
+|  WINNER: Sam (Khan Industries)           |
+|  Victory: 4 Red Stars                    |
+|                                          |
+|  FINAL STANDINGS                         |
+|  1. Sam      - 4 stars, 18 territories   |
+|  2. Jordan   - 2 stars, 12 territories   |
+|  3. Alex     - 1 star, 8 territories     |
+|  4. Jo       - Eliminated turn 14        |
+|                                          |
+|  GAME STATS                              |
+|  Duration: 1h 45m                        |
+|  Total Turns: 23                         |
+|  Territories Conquered: 47               |
+|                                          |
+|  LEGACY CHANGES                          |
+|  - Sam founded Major City in Egypt       |
+|  - Jordan named Africa "The Badlands"    |
+|  - Alex upgraded Kamchatka card (+1)     |
+|                                          |
+|                              [Close]     |
++------------------------------------------+
+```
+
+### 22.8 Component Structure Addition
+
+```
+src/
+├── components/
+│   ├── campaign/                    # NEW
+│   │   ├── HomeDashboard.tsx
+│   │   ├── CreateCampaignModal.tsx
+│   │   ├── JoinCampaignModal.tsx
+│   │   ├── CampaignLobby.tsx
+│   │   ├── CampaignDashboard.tsx
+│   │   ├── GameResultModal.tsx
+│   │   ├── MapTimeline.tsx
+│   │   ├── PlayerReadyList.tsx
+│   │   └── StandingsPanel.tsx
+│   │
+│   ├── auth/                        # NEW
+│   │   ├── LoginScreen.tsx
+│   │   └── AuthProvider.tsx
+│   ...
+```
+
+### 22.9 Visual Style Notes
+
+- **Clean modern UI** with Risk Legacy design accents
+- Card-based layouts with subtle borders
+- Risk Legacy typography (Cinzel for headers)
+- Muted color palette inspired by board game
+- Smooth transitions between screens
+- Map preview uses same SVG asset, scaled down
+
+### 22.10 State Management Addition
+
+```typescript
+// src/store/campaignStore.ts
+interface CampaignState {
+  campaigns: Campaign[];
+  activeCampaign: Campaign | null;
+  lobbyPlayers: LobbyPlayer[];
+  gameHistory: GameSummary[];
+  mapSnapshots: MapSnapshot[];  // For timeline slider
+
+  // Actions
+  createCampaign: (name: string, playerCount: number, turnTimer: number) => void;
+  joinCampaign: (code: string) => void;
+  leaveCampaign: () => void;
+  toggleReady: () => void;
+  startCampaign: () => void;  // Host only
+  selectHistoryGame: (gameNumber: number) => void;
+}
+```
+
+### 22.11 New WebSocket Events
+
+**Client → Server**:
+
+| Event | Payload | Screen |
+|-------|---------|--------|
+| `get_campaigns` | {} | Home Dashboard |
+| `get_campaign_history` | { campaignId } | Campaign Dashboard |
+| `get_map_snapshot` | { campaignId, gameNumber } | Map Timeline |
+
+**Server → Client**:
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `campaigns_list` | { campaigns[] } | User's campaigns |
+| `campaign_history` | { games[], standings } | Full campaign data |
+| `map_snapshot` | { territories, scars, cities } | Map state at game N |
+
+---
+
+## 23. Campaign Management Implementation Order
+
+1. Auth system (Google OAuth)
+2. Home Dashboard with campaign list
+3. Create Campaign modal + backend
+4. Join Campaign modal
+5. Campaign Lobby (pre-first-game)
+6. Campaign Dashboard (between games)
+7. Map Timeline component
+8. Game Result modal
+
+---
+
+## 24. Campaign Management Verification
+
+1. Create a new campaign, verify it appears in list
+2. Share invite code, have another user join
+3. Ready up flow works, host can start when all ready
+4. After a game, dashboard shows correct history
+5. Map timeline slider shows accumulated changes
+6. Past game results display correctly
