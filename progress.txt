@@ -222,7 +222,22 @@
   - Conquest notification pulses with text-shadow glow effect
   - Continue button has hover scale effect
   - All animations use Tailwind CSS (no external animation library)
-- [ ] 5. Implement conquest troop movement
+- [x] 5. Implement conquest troop movement (commit fc78ebc)
+  - Enhanced TROOP_MOVE phase UI in CombatModal.tsx:
+    - Added range slider input for selecting troops to move after conquest
+    - Shows territory names (From: X → Y) in header
+    - Large prominent troop count display
+    - Slider with custom-styled thumb (yellow) matching game theme
+    - Min/max labels below slider for clarity
+    - Maintained +/- buttons alongside slider for fine-grained control
+  - Added territory troop preview showing:
+    - Attacking territory: troops remaining after move (red text)
+    - Defending territory: troops being moved in (green text)
+  - Added conquest pulse animation on header text
+  - Added hover scale effect on confirm button
+  - Properly handles edge case when min equals max (slider disabled)
+  - All troop movement validation uses getConquestTroopRange() from combatResolution.ts
+  - confirmConquest() in gameStore.ts properly transfers ownership and moves troops
 
 ### Phase 5: Maneuver Phase
 - [ ] 1. Build path validation display
