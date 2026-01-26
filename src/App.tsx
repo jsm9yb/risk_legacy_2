@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { GameBoard } from './components/game/GameBoard';
+import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 
@@ -32,13 +33,17 @@ function App() {
   );
   const [selectedTerritory, setSelectedTerritory] = useState<TerritoryId | null>(null);
   const [hoveredTerritory, setHoveredTerritory] = useState<TerritoryId | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const handleTerritoryClick = (territoryId: TerritoryId) => {
     setSelectedTerritory((prev) => (prev === territoryId ? null : territoryId));
   };
 
-  const handleTerritoryHover = (territoryId: TerritoryId | null) => {
+  const handleTerritoryHover = (territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => {
     setHoveredTerritory(territoryId);
+    if (mousePosition) {
+      setTooltipPosition(mousePosition);
+    }
   };
 
   // Get neighbors of selected territory for highlighting
@@ -87,6 +92,14 @@ function App() {
             </span>
           </div>
         </footer>
+      )}
+
+      {/* Territory Tooltip */}
+      {hoveredTerritory && territoryStates[hoveredTerritory] && (
+        <TerritoryTooltip
+          territory={territoryStates[hoveredTerritory]}
+          position={tooltipPosition}
+        />
       )}
     </div>
   );

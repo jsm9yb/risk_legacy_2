@@ -6,7 +6,7 @@ import { TerritoryState, TerritoryId } from '@/types/territory';
 interface GameBoardProps {
   territoryStates: Record<TerritoryId, TerritoryState>;
   onTerritoryClick?: (territoryId: TerritoryId) => void;
-  onTerritoryHover?: (territoryId: TerritoryId | null) => void;
+  onTerritoryHover?: (territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => void;
   selectedTerritory?: TerritoryId | null;
   highlightedTerritories?: TerritoryId[];
 }
@@ -68,8 +68,12 @@ export function GameBoard({
           onTerritoryClick?.(territory.id);
         });
 
-        pathElement.addEventListener('mouseenter', () => {
-          onTerritoryHover?.(territory.id);
+        pathElement.addEventListener('mouseenter', (e: MouseEvent) => {
+          onTerritoryHover?.(territory.id, { x: e.clientX, y: e.clientY });
+        });
+
+        pathElement.addEventListener('mousemove', (e: MouseEvent) => {
+          onTerritoryHover?.(territory.id, { x: e.clientX, y: e.clientY });
         });
 
         pathElement.addEventListener('mouseleave', () => {
