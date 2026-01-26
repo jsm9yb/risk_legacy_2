@@ -3,6 +3,7 @@ import { GameBoard } from './components/game/GameBoard';
 import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { ActionBar, ValidationError } from './components/game/ActionBar';
+import { CombatModal } from './components/game/CombatModal';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
@@ -113,6 +114,10 @@ function App() {
     pendingDeployments,
     attackingTerritory,
     defendingTerritory,
+    attackerDiceCount,
+    defenderDiceCount,
+    combatResult,
+    conquestTroopsToMove,
     lastError,
     syncFromServer,
     setSelectedTerritory,
@@ -123,12 +128,19 @@ function App() {
     selectAttackSource,
     selectAttackTarget,
     selectAttackerDice,
+    selectDefenderDice,
+    resolveCombatResult,
+    setConquestTroops,
+    confirmConquest,
     cancelAttack,
     endAttackPhase,
     getTroopsRemaining,
     getSelectableTerritories,
     getValidAttackTargets,
     getAvailableAttackerDice,
+    getAvailableDefenderDice,
+    getDefendingPlayer,
+    getConquestTroopRange,
     clearError,
   } = useGameStore();
 
@@ -181,6 +193,22 @@ function App() {
   // Get available dice options for attacker
   const availableDice = getAvailableAttackerDice();
 
+  // Get available dice options for defender
+  const availableDefenderDice = getAvailableDefenderDice();
+
+  // Get defending player
+  const defendingPlayer = getDefendingPlayer();
+
+  // Get conquest troop range
+  const conquestTroopRange = getConquestTroopRange();
+
+  // Determine if combat modal should be open
+  const isCombatModalOpen =
+    phase === 'ATTACK' &&
+    attackingTerritory !== null &&
+    defendingTerritory !== null &&
+    (subPhase === 'DEFENDER_DICE' || subPhase === 'RESOLVE' || subPhase === 'TROOP_MOVE');
+
   const handleTerritoryClick = useCallback((territoryId: TerritoryId) => {
     // During attack phase, handle source/target selection
     if (phase === 'ATTACK') {
@@ -232,6 +260,19 @@ function App() {
       console.log(`Selected ${diceCount} dice! Transitioning to DEFENDER_DICE phase...`);
     }
   }, [selectAttackerDice]);
+
+  // Select defender dice count
+  const handleSelectDefenderDice = useCallback((diceCount: number) => {
+    const result = selectDefenderDice(diceCount);
+    if (result.valid) {
+      console.log(`Defender selected ${diceCount} dice! Rolling combat...`);
+    }
+  }, [selectDefenderDice]);
+
+  // Continue attack after combat resolution
+  const handleContinueAttack = useCallback(() => {
+    console.log('Continuing attack phase...');
+  }, []);
 
   // Get highlighted territories based on phase
   const highlightedTerritories = (() => {
@@ -328,6 +369,31 @@ function App() {
         <TerritoryTooltip
           territory={territoryStates[hoveredTerritory]}
           position={tooltipPosition}
+        />
+      )}
+
+      {/* Combat Modal */}
+      {isCombatModalOpen && attackingTerritory && defendingTerritory && (
+        <CombatModal
+          isOpen={isCombatModalOpen}
+          subPhase={subPhase}
+          attackingTerritory={attackingTerritory}
+          defendingTerritory={defendingTerritory}
+          territoryStates={territoryStates}
+          attackingPlayer={currentPlayer}
+          defendingPlayer={defendingPlayer}
+          attackerDiceCount={attackerDiceCount}
+          defenderDiceCount={defenderDiceCount}
+          availableDefenderDice={availableDefenderDice}
+          combatResult={combatResult}
+          conquestTroopsToMove={conquestTroopsToMove}
+          conquestTroopRange={conquestTroopRange}
+          onSelectDefenderDice={handleSelectDefenderDice}
+          onResolveCombat={resolveCombatResult}
+          onSetConquestTroops={setConquestTroops}
+          onConfirmConquest={confirmConquest}
+          onContinueAttack={handleContinueAttack}
+          onCancel={cancelAttack}
         />
       )}
     </div>

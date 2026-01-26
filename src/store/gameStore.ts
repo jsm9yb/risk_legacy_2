@@ -18,6 +18,18 @@ import {
   getAvailableAttackerDice,
   AttackValidationResult,
 } from '@/utils/attackValidation';
+import {
+  CombatResult,
+  rollDice,
+  applyModifiers,
+  resolveCombat,
+  checkSupremeFirepower,
+  getMaxDefenderDice,
+  getAvailableDefenderDice,
+  getConquestTroopRange,
+  validateSelectDefenderDice,
+  DefenderDiceValidationResult,
+} from '@/utils/combatResolution';
 
 /**
  * Deployment history entry for tracking troop placements
@@ -55,6 +67,14 @@ export interface GameStoreState {
   attackingTerritory: TerritoryId | null;
   defendingTerritory: TerritoryId | null;
   attackerDiceCount: number | null;
+  defenderDiceCount: number | null;
+
+  // Combat state
+  combatResult: CombatResult | null;
+  attackerRawRolls: number[] | null;
+  defenderRawRolls: number[] | null;
+  conquestTroopsToMove: number | null;
+  isFirstAttackOfTurn: boolean;
 
   // UI state
   selectedTerritory: TerritoryId | null;
@@ -84,12 +104,21 @@ export interface GameStoreActions {
   selectAttackSource: (territoryId: TerritoryId) => AttackValidationResult;
   selectAttackTarget: (territoryId: TerritoryId) => AttackValidationResult;
   selectAttackerDice: (diceCount: number) => AttackValidationResult;
+  selectDefenderDice: (diceCount: number) => DefenderDiceValidationResult;
+  rollCombatDice: () => void;
+  resolveCombatResult: () => void;
+  setConquestTroops: (troops: number) => void;
+  confirmConquest: () => void;
   cancelAttack: () => void;
   endAttackPhase: () => void;
 
   // Attack phase selectors
   getMaxAttackerDice: () => number;
   getAvailableAttackerDice: () => number[];
+  getMaxDefenderDice: () => number;
+  getAvailableDefenderDice: () => number[];
+  getConquestTroopRange: () => { min: number; max: number };
+  getDefendingPlayer: () => Player | null;
 
   // Selectors
   getCurrentPlayer: () => Player | null;
@@ -124,6 +153,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   attackingTerritory: null,
   defendingTerritory: null,
   attackerDiceCount: null,
+  defenderDiceCount: null,
+  combatResult: null,
+  attackerRawRolls: null,
+  defenderRawRolls: null,
+  conquestTroopsToMove: null,
+  isFirstAttackOfTurn: true,
   selectedTerritory: null,
   hoveredTerritory: null,
   lastError: null,
@@ -138,6 +173,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       attackingTerritory: null,
       defendingTerritory: null,
       attackerDiceCount: null,
+      defenderDiceCount: null,
+      combatResult: null,
+      attackerRawRolls: null,
+      defenderRawRolls: null,
+      conquestTroopsToMove: null,
+      isFirstAttackOfTurn: true,
     }));
   },
 
@@ -551,12 +592,280 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return getAvailableAttackerDice(attackingTroops);
   },
 
+  // Get maximum defender dice based on defending territory
+  getMaxDefenderDice: () => {
+    const state = get();
+    if (!state.defendingTerritory) return 0;
+    const defendingTroops = state.territories[state.defendingTerritory]?.troopCount || 0;
+    return getMaxDefenderDice(defendingTroops);
+  },
+
+  // Get available dice options for defender
+  getAvailableDefenderDice: () => {
+    const state = get();
+    if (!state.defendingTerritory) return [];
+    const defendingTroops = state.territories[state.defendingTerritory]?.troopCount || 0;
+    return getAvailableDefenderDice(defendingTroops);
+  },
+
+  // Get defending player based on defending territory owner
+  getDefendingPlayer: () => {
+    const state = get();
+    if (!state.defendingTerritory) return null;
+    const defendingOwnerId = state.territories[state.defendingTerritory]?.ownerId;
+    if (!defendingOwnerId) return null;
+    return state.players.find((p) => p.id === defendingOwnerId) || null;
+  },
+
+  // Get conquest troop range (min/max troops to move after winning)
+  getConquestTroopRange: () => {
+    const state = get();
+    if (!state.attackingTerritory || !state.attackerDiceCount) {
+      return { min: 0, max: 0 };
+    }
+    const attackingTroops = state.territories[state.attackingTerritory]?.troopCount || 0;
+    return getConquestTroopRange(state.attackerDiceCount, attackingTroops);
+  },
+
+  // Select defender dice count
+  selectDefenderDice: (diceCount) => {
+    const state = get();
+
+    if (!state.defendingTerritory) {
+      const result: DefenderDiceValidationResult = {
+        valid: false,
+        errorCode: 'INVALID_PHASE',
+        errorMessage: 'No defending territory selected',
+      };
+      set({ lastError: result as AttackValidationResult });
+      return result;
+    }
+
+    const defendingTroops = state.territories[state.defendingTerritory]?.troopCount || 0;
+    const isCorrectPhase = state.phase === 'ATTACK' && state.subPhase === 'DEFENDER_DICE';
+
+    const validationResult = validateSelectDefenderDice(
+      diceCount,
+      defendingTroops,
+      true, // Defender is always allowed to choose
+      isCorrectPhase
+    );
+
+    if (!validationResult.valid) {
+      set({ lastError: validationResult as AttackValidationResult });
+      return validationResult;
+    }
+
+    // Set defender dice count and transition to rolling
+    set({
+      defenderDiceCount: diceCount,
+      subPhase: 'RESOLVE' as SubPhase,
+      lastError: null,
+    });
+
+    // Automatically roll dice after defender selects
+    get().rollCombatDice();
+
+    return { valid: true };
+  },
+
+  // Roll combat dice and apply modifiers
+  rollCombatDice: () => {
+    const state = get();
+    const currentPlayer = state.players[0];
+
+    if (!state.attackingTerritory || !state.defendingTerritory) return;
+    if (!state.attackerDiceCount || !state.defenderDiceCount) return;
+
+    const attackingTerritory = state.territories[state.attackingTerritory];
+    const defendingTerritory = state.territories[state.defendingTerritory];
+    const defendingPlayer = state.players.find((p) => p.id === defendingTerritory?.ownerId) || null;
+
+    // Roll dice
+    const attackerRolls = rollDice(state.attackerDiceCount);
+    const defenderRolls = rollDice(state.defenderDiceCount);
+
+    // Check for Supreme Firepower before applying modifiers
+    const hasSupremeFirepower =
+      currentPlayer?.activePower === 'supreme_firepower' && checkSupremeFirepower(attackerRolls);
+
+    // Apply modifiers
+    const attackerDice = applyModifiers(
+      attackerRolls,
+      true,
+      attackingTerritory,
+      currentPlayer,
+      state.isFirstAttackOfTurn
+    );
+
+    const defenderDice = applyModifiers(
+      defenderRolls,
+      false,
+      defendingTerritory,
+      defendingPlayer,
+      false
+    );
+
+    // Resolve combat
+    let result: CombatResult;
+
+    if (hasSupremeFirepower) {
+      // Supreme Firepower: Defender loses 3 troops immediately
+      result = {
+        attackerRolls: attackerDice,
+        defenderRolls: defenderDice,
+        comparisons: [],
+        attackerLosses: 0,
+        defenderLosses: 3,
+        defenderEliminated: defendingTerritory.troopCount <= 3,
+        conquestRequired: defendingTerritory.troopCount <= 3,
+      };
+    } else {
+      result = resolveCombat(
+        attackerDice,
+        defenderDice,
+        defendingTerritory.troopCount,
+        currentPlayer,
+        defendingPlayer
+      );
+    }
+
+    set({
+      attackerRawRolls: attackerRolls,
+      defenderRawRolls: defenderRolls,
+      combatResult: result,
+    });
+  },
+
+  // Apply combat result to territories
+  resolveCombatResult: () => {
+    const state = get();
+
+    if (!state.combatResult || !state.attackingTerritory || !state.defendingTerritory) return;
+
+    const { attackerLosses, defenderLosses, conquestRequired } = state.combatResult;
+
+    // Update territory troop counts
+    set((prev) => {
+      const updatedTerritories = { ...prev.territories };
+
+      // Apply attacker losses
+      if (prev.attackingTerritory && updatedTerritories[prev.attackingTerritory]) {
+        updatedTerritories[prev.attackingTerritory] = {
+          ...updatedTerritories[prev.attackingTerritory],
+          troopCount: Math.max(1, updatedTerritories[prev.attackingTerritory].troopCount - attackerLosses),
+        };
+      }
+
+      // Apply defender losses
+      if (prev.defendingTerritory && updatedTerritories[prev.defendingTerritory]) {
+        updatedTerritories[prev.defendingTerritory] = {
+          ...updatedTerritories[prev.defendingTerritory],
+          troopCount: Math.max(0, updatedTerritories[prev.defendingTerritory].troopCount - defenderLosses),
+        };
+      }
+
+      // If conquest required, transition to TROOP_MOVE phase
+      if (conquestRequired) {
+        const minTroops = prev.attackerDiceCount || 1;
+        return {
+          territories: updatedTerritories,
+          subPhase: 'TROOP_MOVE' as SubPhase,
+          conquestTroopsToMove: minTroops,
+          isFirstAttackOfTurn: false, // No longer first attack
+        };
+      }
+
+      // Otherwise, go back to IDLE for next attack
+      return {
+        territories: updatedTerritories,
+        subPhase: 'IDLE' as SubPhase,
+        attackingTerritory: null,
+        defendingTerritory: null,
+        attackerDiceCount: null,
+        defenderDiceCount: null,
+        combatResult: null,
+        attackerRawRolls: null,
+        defenderRawRolls: null,
+        isFirstAttackOfTurn: false, // No longer first attack
+      };
+    });
+  },
+
+  // Set conquest troop count
+  setConquestTroops: (troops) => {
+    const state = get();
+    const range = state.getConquestTroopRange();
+
+    if (troops >= range.min && troops <= range.max) {
+      set({ conquestTroopsToMove: troops });
+    }
+  },
+
+  // Confirm conquest and move troops
+  confirmConquest: () => {
+    const state = get();
+
+    if (!state.attackingTerritory || !state.defendingTerritory || !state.conquestTroopsToMove) {
+      return;
+    }
+
+    const currentPlayer = state.players[0];
+    if (!currentPlayer) return;
+
+    set((prev) => {
+      const updatedTerritories = { ...prev.territories };
+      const troopsToMove = prev.conquestTroopsToMove || 1;
+
+      // Move troops from attacking to defending territory
+      if (prev.attackingTerritory && updatedTerritories[prev.attackingTerritory]) {
+        updatedTerritories[prev.attackingTerritory] = {
+          ...updatedTerritories[prev.attackingTerritory],
+          troopCount: updatedTerritories[prev.attackingTerritory].troopCount - troopsToMove,
+        };
+      }
+
+      // Transfer ownership and place troops in conquered territory
+      if (prev.defendingTerritory && updatedTerritories[prev.defendingTerritory]) {
+        updatedTerritories[prev.defendingTerritory] = {
+          ...updatedTerritories[prev.defendingTerritory],
+          ownerId: currentPlayer.id,
+          troopCount: troopsToMove,
+        };
+      }
+
+      // Update conqueredThisTurn for card draw eligibility
+      const updatedPlayers = prev.players.map((p) =>
+        p.id === currentPlayer.id ? { ...p, conqueredThisTurn: true } : p
+      );
+
+      return {
+        territories: updatedTerritories,
+        players: updatedPlayers,
+        subPhase: 'IDLE' as SubPhase,
+        attackingTerritory: null,
+        defendingTerritory: null,
+        attackerDiceCount: null,
+        defenderDiceCount: null,
+        combatResult: null,
+        attackerRawRolls: null,
+        defenderRawRolls: null,
+        conquestTroopsToMove: null,
+      };
+    });
+  },
+
   // Cancel the current attack (go back to IDLE)
   cancelAttack: () => {
     set({
       attackingTerritory: null,
       defendingTerritory: null,
       attackerDiceCount: null,
+      defenderDiceCount: null,
+      combatResult: null,
+      attackerRawRolls: null,
+      defenderRawRolls: null,
+      conquestTroopsToMove: null,
       selectedTerritory: null,
       subPhase: 'IDLE' as SubPhase,
       lastError: null,
@@ -569,6 +878,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       attackingTerritory: null,
       defendingTerritory: null,
       attackerDiceCount: null,
+      defenderDiceCount: null,
+      combatResult: null,
+      attackerRawRolls: null,
+      defenderRawRolls: null,
+      conquestTroopsToMove: null,
+      isFirstAttackOfTurn: true, // Reset for next turn
       selectedTerritory: null,
       phase: 'MANEUVER' as GamePhase,
       subPhase: null,
