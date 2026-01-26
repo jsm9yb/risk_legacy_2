@@ -267,7 +267,21 @@
     - SELECT_MANEUVER_TARGET: Shows source territory, Cancel/Skip buttons
     - SET_MANEUVER_TROOPS: Shows path summary with territory names
   - Updated PhaseIndicator.tsx with maneuver sub-phase display names
-- [ ] 2. Create maneuver controls
+- [x] 2. Create maneuver controls (commit 4130b76)
+  - Updated ManeuverControls SET_MANEUVER_TROOPS state with full UI:
+    - Troop selection slider with custom yellow thumb styling
+    - +/- buttons for fine-grained troop adjustment
+    - Live preview showing troop counts after maneuver
+    - Source/target territory names with path length display
+    - Execute Maneuver button that calls confirmManeuver action
+    - Cancel button to return to source selection
+  - Added new props to ManeuverControlsProps interface:
+    - maneuverTroopsToMove, maxManeuverTroops, onSetManeuverTroops, onConfirmManeuver
+  - Updated ActionBarProps interface with matching props
+  - Wired up in App.tsx:
+    - Added maneuverTroopsToMove and getMaxManeuverTroops from store
+    - Added setManeuverTroops and confirmManeuver handlers
+    - Passed all new props to ActionBar component
 - [ ] 3. Implement troop movement slider
 
 ### Phase 6: Setup Phase
