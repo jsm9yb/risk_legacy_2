@@ -111,6 +111,8 @@ function App() {
     activePlayerId,
     players,
     pendingDeployments,
+    attackingTerritory,
+    defendingTerritory,
     lastError,
     syncFromServer,
     setSelectedTerritory,
@@ -118,8 +120,13 @@ function App() {
     addTroop,
     removeTroop,
     confirmDeployment,
+    selectAttackSource,
+    selectAttackTarget,
+    cancelAttack,
+    endAttackPhase,
     getTroopsRemaining,
     getSelectableTerritories,
+    getValidAttackTargets,
     clearError,
   } = useGameStore();
 
@@ -170,8 +177,23 @@ function App() {
   const selectableTerritories = getSelectableTerritories();
 
   const handleTerritoryClick = useCallback((territoryId: TerritoryId) => {
+    // During attack phase, handle source/target selection
+    if (phase === 'ATTACK') {
+      if (subPhase === 'IDLE') {
+        // Select attack source
+        selectAttackSource(territoryId);
+        return;
+      }
+      if (subPhase === 'SELECT_ATTACK') {
+        // Select attack target
+        selectAttackTarget(territoryId);
+        return;
+      }
+    }
+
+    // Default behavior: toggle selection
     setSelectedTerritory(selectedTerritory === territoryId ? null : territoryId);
-  }, [selectedTerritory, setSelectedTerritory]);
+  }, [phase, subPhase, selectedTerritory, setSelectedTerritory, selectAttackSource, selectAttackTarget]);
 
   const handleTerritoryHover = useCallback((territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => {
     setHoveredTerritory(territoryId);
@@ -198,10 +220,17 @@ function App() {
     }
   }, [confirmDeployment]);
 
-  // Get neighbors of selected territory for highlighting
-  const highlightedTerritories = selectedTerritory
-    ? territories.find((t) => t.id === selectedTerritory)?.neighbors || []
-    : [];
+  // Get highlighted territories based on phase
+  const highlightedTerritories = (() => {
+    // During attack phase SELECT_ATTACK, highlight valid attack targets
+    if (phase === 'ATTACK' && subPhase === 'SELECT_ATTACK' && attackingTerritory) {
+      return getValidAttackTargets();
+    }
+    // Default: show neighbors of selected territory
+    return selectedTerritory
+      ? territories.find((t) => t.id === selectedTerritory)?.neighbors || []
+      : [];
+  })();
 
   // Don't render until store is initialized
   if (!currentPlayer || Object.keys(territoryStates).length === 0) {
@@ -272,6 +301,10 @@ function App() {
         onAddTroop={handleAddTroop}
         onRemoveTroop={handleRemoveTroop}
         onConfirmDeployment={handleConfirmDeployment}
+        attackingTerritory={attackingTerritory}
+        defendingTerritory={defendingTerritory}
+        onCancelAttack={cancelAttack}
+        onEndAttackPhase={endAttackPhase}
         validationError={displayError}
       />
 

@@ -1,10 +1,175 @@
 import { TerritoryId, TerritoryState } from '@/types/territory';
 import { GamePhase, SubPhase } from '@/types/game';
-import { territories } from '@/data/territories';
+import { territories, territoriesById } from '@/data/territories';
 
 export interface ValidationError {
   code: string;
   message: string;
+}
+
+interface AttackControlsProps {
+  subPhase: SubPhase;
+  attackingTerritory: TerritoryId | null;
+  defendingTerritory: TerritoryId | null;
+  territoryStates: Record<TerritoryId, TerritoryState>;
+  onCancelAttack: () => void;
+  onEndAttackPhase: () => void;
+  validationError?: ValidationError | null;
+}
+
+function AttackControls({
+  subPhase,
+  attackingTerritory,
+  defendingTerritory,
+  territoryStates,
+  onCancelAttack,
+  onEndAttackPhase,
+  validationError,
+}: AttackControlsProps) {
+  const attackingTerritoryData = attackingTerritory
+    ? territoriesById[attackingTerritory]
+    : null;
+
+  const defendingTerritoryData = defendingTerritory
+    ? territoriesById[defendingTerritory]
+    : null;
+
+  const attackingTroops = attackingTerritory
+    ? territoryStates[attackingTerritory]?.troopCount || 0
+    : 0;
+
+  const defendingTroops = defendingTerritory
+    ? territoryStates[defendingTerritory]?.troopCount || 0
+    : 0;
+
+  // IDLE state: waiting to select attack source
+  if (subPhase === 'IDLE') {
+    return (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex flex-col">
+          <div className="font-display text-board-parchment">
+            Select a territory to attack from
+          </div>
+          <div className="text-sm text-board-parchment/70 font-body">
+            Choose a territory with at least 2 troops
+          </div>
+          {validationError && (
+            <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
+              {validationError.message}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onEndAttackPhase}
+          className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+            bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg
+            transition-all duration-150"
+        >
+          End Attack Phase &rarr;
+        </button>
+      </div>
+    );
+  }
+
+  // SELECT_ATTACK state: selecting attack target
+  if (subPhase === 'SELECT_ATTACK' && attackingTerritory) {
+    return (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex flex-col">
+          <div className="font-display text-board-parchment">
+            <span className="text-lg">Attacking from: </span>
+            <span className="text-yellow-400 font-semibold">
+              {attackingTerritoryData?.name}
+            </span>
+            <span className="font-numbers text-board-parchment/70 ml-2">
+              ({attackingTroops} troops)
+            </span>
+          </div>
+          <div className="text-sm text-board-parchment/70 font-body">
+            Select an adjacent enemy territory to attack
+          </div>
+          {validationError && (
+            <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
+              {validationError.message}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancelAttack}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
+              transition-all duration-150"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onEndAttackPhase}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg
+              transition-all duration-150"
+          >
+            End Attack Phase &rarr;
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ATTACKER_DICE state: attack target selected, showing attack summary
+  // (Full dice selection will be implemented in Phase 4, Task 2)
+  if (subPhase === 'ATTACKER_DICE' && attackingTerritory && defendingTerritory) {
+    return (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex flex-col">
+          <div className="font-display text-board-parchment text-lg">
+            <span className="text-yellow-400 font-semibold">
+              {attackingTerritoryData?.name}
+            </span>
+            <span className="font-numbers text-board-parchment/70 ml-1">
+              ({attackingTroops})
+            </span>
+            <span className="mx-3 text-red-400">⚔️</span>
+            <span className="text-red-400 font-semibold">
+              {defendingTerritoryData?.name}
+            </span>
+            <span className="font-numbers text-board-parchment/70 ml-1">
+              ({defendingTroops})
+            </span>
+          </div>
+          <div className="text-sm text-board-parchment/70 font-body">
+            Attack declared! (Dice selection coming in next task)
+          </div>
+          {validationError && (
+            <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
+              {validationError.message}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancelAttack}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
+              transition-all duration-150"
+          >
+            Cancel Attack
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback for other attack sub-phases
+  return (
+    <div className="flex items-center justify-between w-full">
+      <div className="font-display text-board-parchment">
+        Attack in progress...
+      </div>
+    </div>
+  );
 }
 
 interface ReinforcementControlsProps {
@@ -155,6 +320,11 @@ interface ActionBarProps {
   onAddTroop: (territoryId: TerritoryId) => void;
   onRemoveTroop: (territoryId: TerritoryId) => void;
   onConfirmDeployment: () => void;
+  // Attack phase props
+  attackingTerritory?: TerritoryId | null;
+  defendingTerritory?: TerritoryId | null;
+  onCancelAttack?: () => void;
+  onEndAttackPhase?: () => void;
   validationError?: ValidationError | null;
 }
 
@@ -168,6 +338,10 @@ export function ActionBar({
   onAddTroop,
   onRemoveTroop,
   onConfirmDeployment,
+  attackingTerritory,
+  defendingTerritory,
+  onCancelAttack,
+  onEndAttackPhase,
   validationError,
 }: ActionBarProps) {
   // Only show ActionBar during active game phases
@@ -190,19 +364,16 @@ export function ActionBar({
         />
       )}
 
-      {phase === 'ATTACK' && subPhase === 'IDLE' && (
-        <div className="flex items-center justify-between w-full">
-          <div className="font-display text-board-parchment">
-            Select a territory to attack from
-          </div>
-          <button
-            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
-              bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg
-              transition-all duration-150"
-          >
-            End Attack Phase &rarr;
-          </button>
-        </div>
+      {phase === 'ATTACK' && (
+        <AttackControls
+          subPhase={subPhase}
+          attackingTerritory={attackingTerritory || null}
+          defendingTerritory={defendingTerritory || null}
+          territoryStates={territoryStates}
+          onCancelAttack={onCancelAttack || (() => {})}
+          onEndAttackPhase={onEndAttackPhase || (() => {})}
+          validationError={validationError}
+        />
       )}
 
       {phase === 'MANEUVER' && (

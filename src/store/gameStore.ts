@@ -8,6 +8,13 @@ import {
   validateConfirmDeployment,
   ValidationResult,
 } from '@/utils/deploymentValidation';
+import {
+  validateSelectAttackSource,
+  validateSelectAttackTarget,
+  getAttackableTerritories,
+  getValidAttackTargets,
+  AttackValidationResult,
+} from '@/utils/attackValidation';
 
 /**
  * Deployment history entry for tracking troop placements
@@ -41,12 +48,16 @@ export interface GameStoreState {
   troopsToPlace: number;
   pendingDeployments: Record<TerritoryId, number>;
 
+  // Attack phase state
+  attackingTerritory: TerritoryId | null;
+  defendingTerritory: TerritoryId | null;
+
   // UI state
   selectedTerritory: TerritoryId | null;
   hoveredTerritory: TerritoryId | null;
 
   // Validation error
-  lastError: ValidationResult | null;
+  lastError: ValidationResult | AttackValidationResult | null;
 }
 
 /**
@@ -65,12 +76,20 @@ export interface GameStoreActions {
   removeTroop: (territoryId: TerritoryId) => ValidationResult;
   confirmDeployment: () => ValidationResult;
 
+  // Attack phase actions
+  selectAttackSource: (territoryId: TerritoryId) => AttackValidationResult;
+  selectAttackTarget: (territoryId: TerritoryId) => AttackValidationResult;
+  cancelAttack: () => void;
+  endAttackPhase: () => void;
+
   // Selectors
   getCurrentPlayer: () => Player | null;
   isMyTurn: () => boolean;
   getPlayerTerritories: (playerId: string) => TerritoryId[];
   getTroopsRemaining: () => number;
   getSelectableTerritories: () => TerritoryId[] | undefined;
+  getAttackableTerritories: () => TerritoryId[];
+  getValidAttackTargets: () => TerritoryId[];
 
   // Error handling
   clearError: () => void;
@@ -93,6 +112,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   players: [],
   troopsToPlace: 0,
   pendingDeployments: {},
+  attackingTerritory: null,
+  defendingTerritory: null,
   selectedTerritory: null,
   hoveredTerritory: null,
   lastError: null,
@@ -102,8 +123,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => ({
       ...state,
       ...newState,
-      // Reset pending deployments when syncing new state
+      // Reset pending deployments and attack state when syncing new state
       pendingDeployments: {},
+      attackingTerritory: null,
+      defendingTerritory: null,
     }));
   },
 
@@ -159,8 +182,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
         .map((t) => t.id);
     }
 
+    // Attack phase: IDLE = select source, SELECT_ATTACK = select target
+    if (state.phase === 'ATTACK' && currentPlayer) {
+      if (state.subPhase === 'IDLE') {
+        // Select attack source: player's territories with >= 2 troops
+        return getAttackableTerritories(state.territories, currentPlayer.id);
+      }
+      if (state.subPhase === 'SELECT_ATTACK' && state.attackingTerritory) {
+        // Select attack target: adjacent enemy territories
+        return getValidAttackTargets(
+          state.attackingTerritory,
+          state.territories,
+          currentPlayer.id
+        );
+      }
+    }
+
     // For other phases, all territories are selectable
     return undefined;
+  },
+
+  // Get territories that can attack (owned by current player, >= 2 troops)
+  getAttackableTerritories: () => {
+    const state = get();
+    const currentPlayer = state.players[0];
+    if (!currentPlayer) return [];
+    return getAttackableTerritories(state.territories, currentPlayer.id);
+  },
+
+  // Get valid attack targets for the currently selected attacking territory
+  getValidAttackTargets: () => {
+    const state = get();
+    const currentPlayer = state.players[0];
+    if (!currentPlayer || !state.attackingTerritory) return [];
+    return getValidAttackTargets(
+      state.attackingTerritory,
+      state.territories,
+      currentPlayer.id
+    );
   },
 
   // Add a troop to pending deployments
@@ -317,6 +376,124 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
 
     return { valid: true };
+  },
+
+  // Select a territory to attack from
+  selectAttackSource: (territoryId) => {
+    const state = get();
+    const currentPlayer = state.players[0];
+
+    if (!currentPlayer) {
+      const result: AttackValidationResult = {
+        valid: false,
+        errorCode: 'NOT_YOUR_TURN',
+        errorMessage: 'No current player',
+      };
+      set({ lastError: result });
+      return result;
+    }
+
+    const isPlayerTurn = state.activePlayerId === currentPlayer.id;
+    const isCorrectPhase = state.phase === 'ATTACK' && state.subPhase === 'IDLE';
+
+    const validationResult = validateSelectAttackSource({
+      territoryId,
+      territoryStates: state.territories,
+      currentPlayerId: currentPlayer.id,
+      isPlayerTurn,
+      isCorrectPhase,
+    });
+
+    if (!validationResult.valid) {
+      set({ lastError: validationResult });
+      return validationResult;
+    }
+
+    // Set attacking territory and transition to SELECT_ATTACK subphase
+    set({
+      attackingTerritory: territoryId,
+      defendingTerritory: null,
+      selectedTerritory: territoryId,
+      subPhase: 'SELECT_ATTACK' as SubPhase,
+      lastError: null,
+    });
+
+    return { valid: true };
+  },
+
+  // Select a territory to attack
+  selectAttackTarget: (territoryId) => {
+    const state = get();
+    const currentPlayer = state.players[0];
+
+    if (!currentPlayer) {
+      const result: AttackValidationResult = {
+        valid: false,
+        errorCode: 'NOT_YOUR_TURN',
+        errorMessage: 'No current player',
+      };
+      set({ lastError: result });
+      return result;
+    }
+
+    if (!state.attackingTerritory) {
+      const result: AttackValidationResult = {
+        valid: false,
+        errorCode: 'INVALID_PHASE',
+        errorMessage: 'Select an attacking territory first',
+      };
+      set({ lastError: result });
+      return result;
+    }
+
+    const isPlayerTurn = state.activePlayerId === currentPlayer.id;
+    const isCorrectPhase = state.phase === 'ATTACK' && state.subPhase === 'SELECT_ATTACK';
+
+    const validationResult = validateSelectAttackTarget({
+      sourceId: state.attackingTerritory,
+      targetId: territoryId,
+      territoryStates: state.territories,
+      currentPlayerId: currentPlayer.id,
+      isPlayerTurn,
+      isCorrectPhase,
+    });
+
+    if (!validationResult.valid) {
+      set({ lastError: validationResult });
+      return validationResult;
+    }
+
+    // Set defending territory and transition to ATTACKER_DICE subphase
+    set({
+      defendingTerritory: territoryId,
+      subPhase: 'ATTACKER_DICE' as SubPhase,
+      lastError: null,
+    });
+
+    return { valid: true };
+  },
+
+  // Cancel the current attack (go back to IDLE)
+  cancelAttack: () => {
+    set({
+      attackingTerritory: null,
+      defendingTerritory: null,
+      selectedTerritory: null,
+      subPhase: 'IDLE' as SubPhase,
+      lastError: null,
+    });
+  },
+
+  // End the attack phase and move to maneuver
+  endAttackPhase: () => {
+    set({
+      attackingTerritory: null,
+      defendingTerritory: null,
+      selectedTerritory: null,
+      phase: 'MANEUVER' as GamePhase,
+      subPhase: null,
+      lastError: null,
+    });
   },
 
   // Clear error
