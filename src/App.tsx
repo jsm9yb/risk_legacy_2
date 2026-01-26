@@ -8,6 +8,7 @@ import { FactionSelect } from './components/setup/FactionSelect';
 import { HQPlacement } from './components/setup/HQPlacement';
 import { VictoryModal } from './components/game/VictoryModal';
 import { GameLog } from './components/game/GameLog';
+import { SoundToggle } from './components/ui/SoundSettings';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
@@ -443,6 +444,7 @@ function App() {
           <span className="text-board-parchment/60 font-body text-sm">
             Game: &quot;Friday Night Wars&quot;
           </span>
+          <SoundToggle />
         </div>
       </header>
 

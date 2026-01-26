@@ -373,5 +373,18 @@
     - addLogEntry(): Adds timestamped entry with current turn
     - clearLog(): Clears all entries
   - Integrated GameLog into App.tsx (shown during 'active' status)
-- [ ] 3. Sound effects
+- [x] 3. Sound effects
+  - Created src/utils/soundManager.ts:
+    - Web Audio API-based synthesized sound effects (no audio files needed)
+    - Sound effects: dice_roll, combat_hit, conquest, deploy, victory, etc.
+    - Volume control and enable/disable toggle
+    - initializeAudio() for browser autoplay policy compliance
+  - Created src/hooks/useSoundEffects.ts:
+    - React hook for playing sounds and managing settings
+    - Auto-initializes audio context on user interaction
+    - Exposes play(), toggle(), setVolume(), setEnabled()
+  - Created src/components/ui/SoundSettings.tsx:
+    - SoundSettings component with toggle and volume slider
+    - SoundToggle compact button component
+  - Integrated SoundToggle into App header
 - [ ] 4. Animations and transitions
