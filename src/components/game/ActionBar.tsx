@@ -2,6 +2,11 @@ import { TerritoryId, TerritoryState } from '@/types/territory';
 import { GamePhase, SubPhase } from '@/types/game';
 import { territories } from '@/data/territories';
 
+export interface ValidationError {
+  code: string;
+  message: string;
+}
+
 interface ReinforcementControlsProps {
   troopsRemaining: number;
   selectedTerritory: TerritoryId | null;
@@ -10,6 +15,7 @@ interface ReinforcementControlsProps {
   onAddTroop: (territoryId: TerritoryId) => void;
   onRemoveTroop: (territoryId: TerritoryId) => void;
   onConfirmDeployment: () => void;
+  validationError?: ValidationError | null;
 }
 
 function ReinforcementControls({
@@ -20,6 +26,7 @@ function ReinforcementControls({
   onAddTroop,
   onRemoveTroop,
   onConfirmDeployment,
+  validationError,
 }: ReinforcementControlsProps) {
   const selectedTerritoryData = selectedTerritory
     ? territories.find((t) => t.id === selectedTerritory)
@@ -49,6 +56,12 @@ function ReinforcementControls({
             ? `Selected: ${selectedTerritoryData?.name}`
             : 'Click a territory to deploy troops'}
         </div>
+        {/* Validation error message */}
+        {validationError && (
+          <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
+            {validationError.message}
+          </div>
+        )}
       </div>
 
       {/* Center: +/- controls for selected territory */}
@@ -142,6 +155,7 @@ interface ActionBarProps {
   onAddTroop: (territoryId: TerritoryId) => void;
   onRemoveTroop: (territoryId: TerritoryId) => void;
   onConfirmDeployment: () => void;
+  validationError?: ValidationError | null;
 }
 
 export function ActionBar({
@@ -154,6 +168,7 @@ export function ActionBar({
   onAddTroop,
   onRemoveTroop,
   onConfirmDeployment,
+  validationError,
 }: ActionBarProps) {
   // Only show ActionBar during active game phases
   if (phase === 'SETUP' || phase === 'END') {
@@ -171,6 +186,7 @@ export function ActionBar({
           onAddTroop={onAddTroop}
           onRemoveTroop={onRemoveTroop}
           onConfirmDeployment={onConfirmDeployment}
+          validationError={validationError}
         />
       )}
 

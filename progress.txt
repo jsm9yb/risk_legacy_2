@@ -82,8 +82,31 @@
   - Click events blocked for non-selectable territories using ref pattern
   - App.tsx computes selectable territories based on game phase
   - Updated mock game state to demonstrate RECRUIT phase
-- [ ] 2. Build troop deployment controls
-- [ ] 3. Add deployment validation
+- [x] 2. Build troop deployment controls (commit fa8e4fa)
+  - Created ActionBar component (src/components/game/ActionBar.tsx)
+  - ReinforcementControls sub-component with +1/-1 buttons for troop placement
+  - Tracks pending deployments in App state before confirmation
+  - Shows "Troops to place: N" with remaining count
+  - Displays selected territory name and current troops
+  - +1 button disabled when no troops remaining
+  - -1 button disabled when no pending troops on territory
+  - "Done Placing" button only enabled when all troops are placed
+  - GameBoard updated to show pending deployments with green +N badges
+  - Territories with pending troops have green highlighted troop count badge
+  - handleAddTroop, handleRemoveTroop, handleConfirmDeployment handlers in App.tsx
+  - ActionBar also includes placeholder UI for ATTACK and MANEUVER phases
+- [x] 3. Add deployment validation
+  - Created src/utils/deploymentValidation.ts with validation functions:
+    - validateAddTroop(): Validates territory ownership, turn, phase, and troops remaining
+    - validateRemoveTroop(): Validates pending troops exist and correct phase
+    - validateConfirmDeployment(): Validates all troops placed before confirming
+    - getDeployableTerritories(): Helper to get valid territories for deployment
+  - Error codes match spec section 8.1: INVALID_TERRITORY, INVALID_PHASE, NOT_YOUR_TURN, INSUFFICIENT_TROOPS, TERRITORY_NOT_OWNED
+  - Added ValidationError interface to ActionBar component
+  - ActionBar displays validation error messages with red text and pulse animation
+  - Errors auto-clear after 3 seconds
+  - App.tsx handlers now use validation functions before modifying state
+  - All deployment actions (add, remove, confirm) are validated
 - [ ] 4. Wire up to game state
 
 ### Phase 4: Attack Phase

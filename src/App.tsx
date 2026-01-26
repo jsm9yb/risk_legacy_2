@@ -2,11 +2,16 @@ import { useState, useCallback } from 'react';
 import { GameBoard } from './components/game/GameBoard';
 import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
-import { ActionBar } from './components/game/ActionBar';
+import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
 import { GamePhase, SubPhase } from './types/game';
+import {
+  validateAddTroop,
+  validateRemoveTroop,
+  validateConfirmDeployment,
+} from './utils/deploymentValidation';
 
 // Mock player data for demonstration
 const mockPlayers: Player[] = [
@@ -110,6 +115,9 @@ function App() {
   // Pending deployments: tracks troops staged for placement but not yet confirmed
   const [pendingDeployments, setPendingDeployments] = useState<Record<TerritoryId, number>>({});
 
+  // Validation error state for displaying feedback
+  const [validationError, setValidationError] = useState<ValidationError | null>(null);
+
   // Mock game state
   const currentPlayer = mockPlayers[0];
   const activePlayerId = 'player-1';
@@ -133,18 +141,64 @@ function App() {
     }
   };
 
+  // Check if it's the correct phase for deployment
+  const isCorrectPhase = phase === 'RECRUIT' && subPhase === 'PLACE_TROOPS';
+  const isPlayerTurn = activePlayerId === currentPlayer.id;
+
   // Add a troop to the selected territory's pending deployments
   const handleAddTroop = useCallback((territoryId: TerritoryId) => {
-    if (troopsRemaining <= 0) return;
+    // Clear any previous validation error
+    setValidationError(null);
+
+    // Validate the deployment action
+    const validationResult = validateAddTroop({
+      territoryId,
+      territoryStates,
+      currentPlayerId: currentPlayer.id,
+      troopsRemaining,
+      isPlayerTurn,
+      isCorrectPhase,
+    });
+
+    if (!validationResult.valid) {
+      setValidationError({
+        code: validationResult.errorCode || 'UNKNOWN',
+        message: validationResult.errorMessage || 'Invalid action',
+      });
+      // Auto-clear error after 3 seconds
+      setTimeout(() => setValidationError(null), 3000);
+      return;
+    }
 
     setPendingDeployments((prev) => ({
       ...prev,
       [territoryId]: (prev[territoryId] || 0) + 1,
     }));
-  }, [troopsRemaining]);
+  }, [troopsRemaining, territoryStates, currentPlayer.id, isPlayerTurn, isCorrectPhase]);
 
   // Remove a troop from the selected territory's pending deployments
   const handleRemoveTroop = useCallback((territoryId: TerritoryId) => {
+    // Clear any previous validation error
+    setValidationError(null);
+
+    // Validate the removal action
+    const validationResult = validateRemoveTroop(
+      territoryId,
+      pendingDeployments,
+      isPlayerTurn,
+      isCorrectPhase
+    );
+
+    if (!validationResult.valid) {
+      setValidationError({
+        code: validationResult.errorCode || 'UNKNOWN',
+        message: validationResult.errorMessage || 'Invalid action',
+      });
+      // Auto-clear error after 3 seconds
+      setTimeout(() => setValidationError(null), 3000);
+      return;
+    }
+
     setPendingDeployments((prev) => {
       const current = prev[territoryId] || 0;
       if (current <= 0) return prev;
@@ -161,11 +215,29 @@ function App() {
         [territoryId]: newCount,
       };
     });
-  }, []);
+  }, [pendingDeployments, isPlayerTurn, isCorrectPhase]);
 
   // Confirm deployment: apply pending deployments to territory states
   const handleConfirmDeployment = useCallback(() => {
-    if (troopsRemaining > 0) return; // Can only confirm when all troops are placed
+    // Clear any previous validation error
+    setValidationError(null);
+
+    // Validate the confirmation action
+    const validationResult = validateConfirmDeployment(
+      troopsRemaining,
+      isPlayerTurn,
+      isCorrectPhase
+    );
+
+    if (!validationResult.valid) {
+      setValidationError({
+        code: validationResult.errorCode || 'UNKNOWN',
+        message: validationResult.errorMessage || 'Invalid action',
+      });
+      // Auto-clear error after 3 seconds
+      setTimeout(() => setValidationError(null), 3000);
+      return;
+    }
 
     setTerritoryStates((prev) => {
       const updated = { ...prev };
@@ -186,7 +258,7 @@ function App() {
     // In a real implementation, this would transition to the next phase
     // For now, we just clear the deployments
     console.log('Deployment confirmed! Transitioning to ATTACK phase...');
-  }, [troopsRemaining, pendingDeployments]);
+  }, [troopsRemaining, pendingDeployments, isPlayerTurn, isCorrectPhase]);
 
   // Get neighbors of selected territory for highlighting
   const highlightedTerritories = selectedTerritory
@@ -266,6 +338,7 @@ function App() {
         onAddTroop={handleAddTroop}
         onRemoveTroop={handleRemoveTroop}
         onConfirmDeployment={handleConfirmDeployment}
+        validationError={validationError}
       />
 
       {/* Territory Tooltip */}
