@@ -7,6 +7,9 @@ import { CombatResult, DieResult } from '@/utils/combatResolution';
 import { FactionEmblem } from '@/components/icons/FactionEmblems';
 import { SubPhase } from '@/types/game';
 
+// Animation phase tracking
+type AnimationPhase = 'idle' | 'rolling' | 'settling' | 'showing-modifiers' | 'showing-results' | 'complete';
+
 interface CombatModalProps {
   isOpen: boolean;
   subPhase: SubPhase;
@@ -31,32 +34,76 @@ interface CombatModalProps {
 
 /**
  * Single die display component with value and modifiers
+ * Supports animation phases: rolling, settling, complete
  */
 function DieDisplay({
   die,
   isAttacker,
+  animationPhase,
+  dieIndex,
 }: {
   die: DieResult;
   isAttacker: boolean;
+  animationPhase: AnimationPhase;
+  dieIndex: number;
 }) {
   const hasModifiers = die.modifiers.length > 0;
   const bgColor = isAttacker ? 'bg-red-600' : 'bg-blue-600';
+  const borderColor = isAttacker ? 'border-red-400' : 'border-blue-400';
+
+  // Random rolling values for animation
+  const [rollingValue, setRollingValue] = useState(1);
+
+  // Update rolling value rapidly during roll phase
+  useEffect(() => {
+    if (animationPhase === 'rolling') {
+      const interval = setInterval(() => {
+        setRollingValue(Math.floor(Math.random() * 6) + 1);
+      }, 50);
+      return () => clearInterval(interval);
+    }
+  }, [animationPhase]);
+
+  // Staggered animation delay based on die index
+  const appearDelay = `${dieIndex * 100}ms`;
+  const settleDelay = `${dieIndex * 80}ms`;
+  const modifierDelay = `${dieIndex * 100 + 200}ms`;
+
+  const isRolling = animationPhase === 'rolling';
+  const isSettling = animationPhase === 'settling';
+  const showModifiers = animationPhase === 'showing-modifiers' || animationPhase === 'showing-results' || animationPhase === 'complete';
+  const showFinalValue = animationPhase !== 'rolling';
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div
+      className="flex flex-col items-center gap-1"
+      style={{ animationDelay: appearDelay }}
+    >
       <div
         className={`
           w-14 h-14 ${bgColor} rounded-lg flex items-center justify-center
-          shadow-lg border-2 ${isAttacker ? 'border-red-400' : 'border-blue-400'}
-          transition-all duration-300
+          shadow-lg border-2 ${borderColor}
+          ${isRolling ? 'animate-dice-roll' : ''}
+          ${isSettling ? 'animate-dice-settle' : ''}
+          ${animationPhase === 'idle' ? 'animate-dice-appear' : ''}
         `}
+        style={isSettling ? { animationDelay: settleDelay } : undefined}
       >
-        <span className="font-numbers text-3xl text-white font-bold">
-          {die.modifiedValue}
+        <span
+          className={`
+            font-numbers text-3xl text-white font-bold
+            ${isSettling ? 'animate-dice-settle' : ''}
+          `}
+          style={isSettling ? { animationDelay: settleDelay } : undefined}
+        >
+          {showFinalValue ? die.modifiedValue : rollingValue}
         </span>
       </div>
-      {hasModifiers && (
-        <div className="text-xs text-board-parchment/70 flex flex-col items-center">
+      {hasModifiers && showModifiers && (
+        <div
+          className="text-xs text-board-parchment/70 flex flex-col items-center animate-modifier-slide"
+          style={{ animationDelay: modifierDelay }}
+        >
           {die.modifiers.map((mod, i) => (
             <span key={i} className={mod.delta > 0 ? 'text-green-400' : 'text-red-400'}>
               {mod.delta > 0 ? '+' : ''}{mod.delta} {mod.name}
@@ -69,19 +116,26 @@ function DieDisplay({
 }
 
 /**
- * Comparison result display
+ * Comparison result display with animation
  */
 function ComparisonDisplay({
   attackerValue,
   defenderValue,
   attackerWins,
+  index,
 }: {
   attackerValue: number;
   defenderValue: number;
   attackerWins: boolean;
+  index: number;
 }) {
+  const animDelay = `${index * 150}ms`;
+
   return (
-    <div className="flex items-center gap-2 text-lg font-body">
+    <div
+      className="flex items-center gap-2 text-lg font-body animate-fade-in-up"
+      style={{ animationDelay: animDelay }}
+    >
       <span className={attackerWins ? 'text-green-400 font-bold' : 'text-board-parchment/70'}>
         {attackerValue}
       </span>
@@ -92,6 +146,36 @@ function ComparisonDisplay({
       <span className="mx-2">&rarr;</span>
       <span className={attackerWins ? 'text-red-400' : 'text-blue-400'}>
         {attackerWins ? 'Attacker wins' : 'Defender wins'}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Casualty display with pop animation
+ */
+function CasualtyDisplay({
+  losses,
+  isAttacker,
+  delay,
+}: {
+  losses: number;
+  isAttacker: boolean;
+  delay: number;
+}) {
+  if (losses === 0) return null;
+
+  return (
+    <div
+      className={`
+        animate-casualty-pop
+        ${isAttacker ? 'text-red-400' : 'text-blue-400'}
+      `}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <span className="font-numbers text-2xl font-bold mr-2">-{losses}</span>
+      <span className="font-body">
+        {isAttacker ? 'Attacker' : 'Defender'} troop{losses !== 1 ? 's' : ''}
       </span>
     </div>
   );
@@ -119,6 +203,7 @@ export function CombatModal({
   onCancel,
 }: CombatModalProps) {
   const [showResults, setShowResults] = useState(false);
+  const [animationPhase, setAnimationPhase] = useState<AnimationPhase>('idle');
 
   const attackingTerritoryData = territoriesById[attackingTerritory];
   const defendingTerritoryData = territoriesById[defendingTerritory];
@@ -128,15 +213,51 @@ export function CombatModal({
   const attackingFaction = factionsById[attackingPlayer.factionId];
   const defendingFaction = defendingPlayer ? factionsById[defendingPlayer.factionId] : null;
 
-  // Auto-show results after combat resolution
+  // Animation sequence when combat result arrives
   useEffect(() => {
     if (combatResult && subPhase === 'RESOLVE') {
-      const timer = setTimeout(() => {
+      // Reset animation state
+      setAnimationPhase('idle');
+      setShowResults(false);
+
+      // Animation timeline:
+      // 0ms: Dice appear (idle phase triggers appear animation)
+      // 100ms: Start rolling
+      const rollTimer = setTimeout(() => {
+        setAnimationPhase('rolling');
+      }, 100);
+
+      // 600ms: Stop rolling, start settling
+      const settleTimer = setTimeout(() => {
+        setAnimationPhase('settling');
+      }, 600);
+
+      // 1000ms: Show modifiers
+      const modifierTimer = setTimeout(() => {
+        setAnimationPhase('showing-modifiers');
+      }, 1000);
+
+      // 1400ms: Show comparison results
+      const resultsTimer = setTimeout(() => {
+        setAnimationPhase('showing-results');
         setShowResults(true);
-      }, 500);
-      return () => clearTimeout(timer);
+      }, 1400);
+
+      // 2000ms: Animation complete
+      const completeTimer = setTimeout(() => {
+        setAnimationPhase('complete');
+      }, 2000);
+
+      return () => {
+        clearTimeout(rollTimer);
+        clearTimeout(settleTimer);
+        clearTimeout(modifierTimer);
+        clearTimeout(resultsTimer);
+        clearTimeout(completeTimer);
+      };
     }
     setShowResults(false);
+    setAnimationPhase('idle');
   }, [combatResult, subPhase]);
 
   // Handle continue after seeing results
@@ -298,7 +419,13 @@ export function CombatModal({
                   </div>
                   <div className="flex justify-center gap-3">
                     {combatResult.attackerRolls.map((die, i) => (
-                      <DieDisplay key={i} die={die} isAttacker={true} />
+                      <DieDisplay
+                        key={i}
+                        die={die}
+                        isAttacker={true}
+                        animationPhase={animationPhase}
+                        dieIndex={i}
+                      />
                     ))}
                   </div>
                 </div>
@@ -310,7 +437,13 @@ export function CombatModal({
                   </div>
                   <div className="flex justify-center gap-3">
                     {combatResult.defenderRolls.map((die, i) => (
-                      <DieDisplay key={i} die={die} isAttacker={false} />
+                      <DieDisplay
+                        key={i}
+                        die={die}
+                        isAttacker={false}
+                        animationPhase={animationPhase}
+                        dieIndex={i}
+                      />
                     ))}
                   </div>
                 </div>
@@ -318,7 +451,7 @@ export function CombatModal({
 
               {/* Results */}
               {showResults && (
-                <div className="bg-board-wood/30 rounded-lg p-4 mb-4">
+                <div className="bg-board-wood/30 rounded-lg p-4 mb-4 animate-fade-in-up">
                   <div className="text-center mb-4">
                     <div className="font-display text-lg text-board-parchment mb-2">Results</div>
 
@@ -330,41 +463,46 @@ export function CombatModal({
                           attackerValue={comp.attackerValue}
                           defenderValue={comp.defenderValue}
                           attackerWins={comp.attackerWins}
+                          index={i}
                         />
                       ))}
                     </div>
 
-                    {/* Casualties */}
-                    <div className="flex justify-center gap-8 text-lg font-body">
-                      {combatResult.attackerLosses > 0 && (
-                        <div className="text-red-400">
-                          Attacker loses {combatResult.attackerLosses} troop
-                          {combatResult.attackerLosses !== 1 ? 's' : ''}
-                        </div>
-                      )}
-                      {combatResult.defenderLosses > 0 && (
-                        <div className="text-blue-400">
-                          Defender loses {combatResult.defenderLosses} troop
-                          {combatResult.defenderLosses !== 1 ? 's' : ''}
-                        </div>
-                      )}
+                    {/* Casualties with pop animation */}
+                    <div className="flex justify-center gap-8 text-lg">
+                      <CasualtyDisplay
+                        losses={combatResult.attackerLosses}
+                        isAttacker={true}
+                        delay={combatResult.comparisons.length * 150}
+                      />
+                      <CasualtyDisplay
+                        losses={combatResult.defenderLosses}
+                        isAttacker={false}
+                        delay={combatResult.comparisons.length * 150 + 100}
+                      />
                     </div>
 
-                    {/* Conquest notification */}
+                    {/* Conquest notification with pulse animation */}
                     {combatResult.conquestRequired && (
-                      <div className="mt-4 text-green-400 font-display text-xl">
+                      <div
+                        className="mt-4 text-green-400 font-display text-xl animate-conquest-pulse"
+                        style={{ animationDelay: `${combatResult.comparisons.length * 150 + 300}ms` }}
+                      >
                         &#9733; TERRITORY CONQUERED! &#9733;
                       </div>
                     )}
                   </div>
 
-                  {/* Continue button */}
-                  <div className="flex justify-center">
+                  {/* Continue button with fade in */}
+                  <div
+                    className="flex justify-center animate-fade-in-up"
+                    style={{ animationDelay: `${combatResult.comparisons.length * 150 + 400}ms` }}
+                  >
                     <button
                       onClick={handleContinue}
                       className="px-8 py-3 rounded-lg font-display text-lg font-semibold
                         bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
-                        transition-all duration-150"
+                        transition-all duration-150 hover:scale-105"
                     >
                       {combatResult.conquestRequired ? 'Move Troops' : 'Continue'}
                     </button>
