@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { GameBoard } from './components/game/GameBoard';
 import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
@@ -6,12 +6,7 @@ import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
-import { GamePhase, SubPhase } from './types/game';
-import {
-  validateAddTroop,
-  validateRemoveTroop,
-  validateConfirmDeployment,
-} from './utils/deploymentValidation';
+import { useGameStore } from './store/gameStore';
 
 // Mock player data for demonstration
 const mockPlayers: Player[] = [
@@ -77,7 +72,7 @@ const mockPlayers: Player[] = [
   },
 ];
 
-// Assign territories to mock players for demonstration
+// Create initial territory states distributed among players
 function createPlaceholderTerritoryStates(): Record<TerritoryId, TerritoryState> {
   const states: Record<TerritoryId, TerritoryState> = {};
   const playerIds = mockPlayers.map((p) => p.id);
@@ -105,178 +100,117 @@ function createPlaceholderTerritoryStates(): Record<TerritoryId, TerritoryState>
 }
 
 function App() {
-  const [territoryStates, setTerritoryStates] = useState<Record<TerritoryId, TerritoryState>>(
-    createPlaceholderTerritoryStates
-  );
-  const [selectedTerritory, setSelectedTerritory] = useState<TerritoryId | null>(null);
-  const [hoveredTerritory, setHoveredTerritory] = useState<TerritoryId | null>(null);
+  // Use Zustand store for game state
+  const {
+    territories: territoryStates,
+    selectedTerritory,
+    hoveredTerritory,
+    phase,
+    subPhase,
+    currentTurn,
+    activePlayerId,
+    players,
+    pendingDeployments,
+    lastError,
+    syncFromServer,
+    setSelectedTerritory,
+    setHoveredTerritory,
+    addTroop,
+    removeTroop,
+    confirmDeployment,
+    getTroopsRemaining,
+    getSelectableTerritories,
+    clearError,
+  } = useGameStore();
+
+  // Local state for tooltip position (UI-only, doesn't need to be in store)
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Pending deployments: tracks troops staged for placement but not yet confirmed
-  const [pendingDeployments, setPendingDeployments] = useState<Record<TerritoryId, number>>({});
+  // Local state for validation error display with auto-clear
+  const [displayError, setDisplayError] = useState<ValidationError | null>(null);
 
-  // Validation error state for displaying feedback
-  const [validationError, setValidationError] = useState<ValidationError | null>(null);
+  // Initialize store with mock data on mount
+  useEffect(() => {
+    syncFromServer({
+      gameId: 'game-1',
+      status: 'active',
+      currentTurn: 5,
+      activePlayerId: 'player-1',
+      phase: 'RECRUIT',
+      subPhase: 'PLACE_TROOPS',
+      territories: createPlaceholderTerritoryStates(),
+      players: mockPlayers,
+      troopsToPlace: 8,
+      pendingDeployments: {},
+    });
+  }, [syncFromServer]);
 
-  // Mock game state
-  const currentPlayer = mockPlayers[0];
-  const activePlayerId = 'player-1';
-  const currentTurn = 5;
-  const phase: GamePhase = 'RECRUIT';
-  const subPhase: SubPhase = 'PLACE_TROOPS';
-  const initialTroops = 8;
+  // Sync validation errors from store to local display state with auto-clear
+  useEffect(() => {
+    if (lastError && !lastError.valid) {
+      setDisplayError({
+        code: lastError.errorCode || 'UNKNOWN',
+        message: lastError.errorMessage || 'Invalid action',
+      });
+      const timer = setTimeout(() => {
+        setDisplayError(null);
+        clearError();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastError, clearError]);
 
-  // Calculate remaining troops (initial minus pending)
-  const totalPendingTroops = Object.values(pendingDeployments).reduce((sum, count) => sum + count, 0);
-  const troopsRemaining = initialTroops - totalPendingTroops;
+  // Get current player from store
+  const currentPlayer = players[0] || null;
 
-  const handleTerritoryClick = (territoryId: TerritoryId) => {
-    setSelectedTerritory((prev) => (prev === territoryId ? null : territoryId));
-  };
+  // Calculate remaining troops using store method
+  const troopsRemaining = getTroopsRemaining();
 
-  const handleTerritoryHover = (territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => {
+  // Get selectable territories using store method
+  const selectableTerritories = getSelectableTerritories();
+
+  const handleTerritoryClick = useCallback((territoryId: TerritoryId) => {
+    setSelectedTerritory(selectedTerritory === territoryId ? null : territoryId);
+  }, [selectedTerritory, setSelectedTerritory]);
+
+  const handleTerritoryHover = useCallback((territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => {
     setHoveredTerritory(territoryId);
     if (mousePosition) {
       setTooltipPosition(mousePosition);
     }
-  };
-
-  // Check if it's the correct phase for deployment
-  const isCorrectPhase = phase === 'RECRUIT' && subPhase === 'PLACE_TROOPS';
-  const isPlayerTurn = activePlayerId === currentPlayer.id;
+  }, [setHoveredTerritory]);
 
   // Add a troop to the selected territory's pending deployments
   const handleAddTroop = useCallback((territoryId: TerritoryId) => {
-    // Clear any previous validation error
-    setValidationError(null);
-
-    // Validate the deployment action
-    const validationResult = validateAddTroop({
-      territoryId,
-      territoryStates,
-      currentPlayerId: currentPlayer.id,
-      troopsRemaining,
-      isPlayerTurn,
-      isCorrectPhase,
-    });
-
-    if (!validationResult.valid) {
-      setValidationError({
-        code: validationResult.errorCode || 'UNKNOWN',
-        message: validationResult.errorMessage || 'Invalid action',
-      });
-      // Auto-clear error after 3 seconds
-      setTimeout(() => setValidationError(null), 3000);
-      return;
-    }
-
-    setPendingDeployments((prev) => ({
-      ...prev,
-      [territoryId]: (prev[territoryId] || 0) + 1,
-    }));
-  }, [troopsRemaining, territoryStates, currentPlayer.id, isPlayerTurn, isCorrectPhase]);
+    addTroop(territoryId);
+  }, [addTroop]);
 
   // Remove a troop from the selected territory's pending deployments
   const handleRemoveTroop = useCallback((territoryId: TerritoryId) => {
-    // Clear any previous validation error
-    setValidationError(null);
-
-    // Validate the removal action
-    const validationResult = validateRemoveTroop(
-      territoryId,
-      pendingDeployments,
-      isPlayerTurn,
-      isCorrectPhase
-    );
-
-    if (!validationResult.valid) {
-      setValidationError({
-        code: validationResult.errorCode || 'UNKNOWN',
-        message: validationResult.errorMessage || 'Invalid action',
-      });
-      // Auto-clear error after 3 seconds
-      setTimeout(() => setValidationError(null), 3000);
-      return;
-    }
-
-    setPendingDeployments((prev) => {
-      const current = prev[territoryId] || 0;
-      if (current <= 0) return prev;
-
-      const newCount = current - 1;
-      if (newCount === 0) {
-        // Remove the key entirely if count is 0
-        const { [territoryId]: _, ...rest } = prev;
-        return rest;
-      }
-
-      return {
-        ...prev,
-        [territoryId]: newCount,
-      };
-    });
-  }, [pendingDeployments, isPlayerTurn, isCorrectPhase]);
+    removeTroop(territoryId);
+  }, [removeTroop]);
 
   // Confirm deployment: apply pending deployments to territory states
   const handleConfirmDeployment = useCallback(() => {
-    // Clear any previous validation error
-    setValidationError(null);
-
-    // Validate the confirmation action
-    const validationResult = validateConfirmDeployment(
-      troopsRemaining,
-      isPlayerTurn,
-      isCorrectPhase
-    );
-
-    if (!validationResult.valid) {
-      setValidationError({
-        code: validationResult.errorCode || 'UNKNOWN',
-        message: validationResult.errorMessage || 'Invalid action',
-      });
-      // Auto-clear error after 3 seconds
-      setTimeout(() => setValidationError(null), 3000);
-      return;
+    const result = confirmDeployment();
+    if (result.valid) {
+      console.log('Deployment confirmed! Transitioning to ATTACK phase...');
     }
-
-    setTerritoryStates((prev) => {
-      const updated = { ...prev };
-      Object.entries(pendingDeployments).forEach(([territoryId, count]) => {
-        if (updated[territoryId as TerritoryId]) {
-          updated[territoryId as TerritoryId] = {
-            ...updated[territoryId as TerritoryId],
-            troopCount: updated[territoryId as TerritoryId].troopCount + count,
-          };
-        }
-      });
-      return updated;
-    });
-
-    // Clear pending deployments after confirming
-    setPendingDeployments({});
-
-    // In a real implementation, this would transition to the next phase
-    // For now, we just clear the deployments
-    console.log('Deployment confirmed! Transitioning to ATTACK phase...');
-  }, [troopsRemaining, pendingDeployments, isPlayerTurn, isCorrectPhase]);
+  }, [confirmDeployment]);
 
   // Get neighbors of selected territory for highlighting
   const highlightedTerritories = selectedTerritory
     ? territories.find((t) => t.id === selectedTerritory)?.neighbors || []
     : [];
 
-  // Compute selectable territories based on game phase
-  // During RECRUIT phase, only current player's territories are selectable
-  const selectableTerritories = (() => {
-    if (phase === 'RECRUIT' && subPhase === 'PLACE_TROOPS') {
-      // Only territories owned by the current player are selectable for troop placement
-      return Object.values(territoryStates)
-        .filter((t) => t.ownerId === currentPlayer.id)
-        .map((t) => t.id);
-    }
-    // For other phases, return undefined to allow all territories to be selectable
-    return undefined;
-  })();
+  // Don't render until store is initialized
+  if (!currentPlayer || Object.keys(territoryStates).length === 0) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-board-wood">
+        <div className="text-board-parchment font-display text-2xl">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-board-wood">
@@ -302,10 +236,10 @@ function App() {
         {/* Player Sidebar */}
         <PlayerSidebar
           currentPlayer={currentPlayer}
-          players={mockPlayers}
-          activePlayerId={activePlayerId}
+          players={players}
+          activePlayerId={activePlayerId || ''}
           currentTurn={currentTurn}
-          phase={phase}
+          phase={phase || 'SETUP'}
           subPhase={subPhase}
           territories={territoryStates}
           troopsRemaining={troopsRemaining}
@@ -329,7 +263,7 @@ function App() {
 
       {/* Action Bar - context-sensitive controls based on phase */}
       <ActionBar
-        phase={phase}
+        phase={phase || 'SETUP'}
         subPhase={subPhase}
         troopsRemaining={troopsRemaining}
         selectedTerritory={selectedTerritory}
@@ -338,7 +272,7 @@ function App() {
         onAddTroop={handleAddTroop}
         onRemoveTroop={handleRemoveTroop}
         onConfirmDeployment={handleConfirmDeployment}
-        validationError={validationError}
+        validationError={displayError}
       />
 
       {/* Territory Tooltip */}
