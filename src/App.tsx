@@ -4,9 +4,11 @@ import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { CombatModal } from './components/game/CombatModal';
+import { FactionSelect } from './components/setup/FactionSelect';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
+import { FactionId } from './types/game';
 import { useGameStore } from './store/gameStore';
 
 // Mock player data for demonstration
@@ -154,6 +156,10 @@ function App() {
     getDefendingPlayer,
     getConquestTroopRange,
     clearError,
+    selectFaction,
+    getTakenFactions,
+    getSetupCurrentPlayer,
+    setupTurnIndex,
   } = useGameStore();
 
   // Local state for tooltip position (UI-only, doesn't need to be in store)
@@ -216,6 +222,13 @@ function App() {
 
   // Get max maneuver troops
   const maxManeuverTroops = getMaxManeuverTroops();
+
+  // Get setup phase data
+  const takenFactions = getTakenFactions();
+  const setupCurrentPlayer = getSetupCurrentPlayer();
+
+  // Determine if faction select should be open
+  const isFactionSelectOpen = phase === 'SETUP' && subPhase === 'FACTION_SELECTION';
 
   // Determine if combat modal should be open
   const isCombatModalOpen =
@@ -302,6 +315,13 @@ function App() {
   const handleContinueAttack = useCallback(() => {
     console.log('Continuing attack phase...');
   }, []);
+
+  // Handle faction selection during setup
+  const handleSelectFaction = useCallback((factionId: FactionId, powerId: string) => {
+    if (!setupCurrentPlayer) return;
+    selectFaction(setupCurrentPlayer.id, factionId, powerId);
+    console.log(`Player ${setupCurrentPlayer.id} selected faction ${factionId} with power ${powerId}`);
+  }, [setupCurrentPlayer, selectFaction]);
 
   // Get highlighted territories based on phase
   const highlightedTerritories = (() => {
@@ -440,6 +460,17 @@ function App() {
           onConfirmConquest={confirmConquest}
           onContinueAttack={handleContinueAttack}
           onCancel={cancelAttack}
+        />
+      )}
+
+      {/* Faction Select Modal */}
+      {isFactionSelectOpen && setupCurrentPlayer && (
+        <FactionSelect
+          isOpen={isFactionSelectOpen}
+          currentPlayerId={setupCurrentPlayer.id}
+          currentPlayerName={`Player ${setupTurnIndex + 1}`}
+          takenFactions={takenFactions}
+          onSelectFaction={handleSelectFaction}
         />
       )}
     </div>

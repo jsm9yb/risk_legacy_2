@@ -8,7 +8,11 @@ export type DeploymentErrorCode =
   | 'INVALID_PHASE'
   | 'NOT_YOUR_TURN'
   | 'INSUFFICIENT_TROOPS'
-  | 'TERRITORY_NOT_OWNED';
+  | 'TERRITORY_NOT_OWNED'
+  // Setup phase errors
+  | 'INVALID_FACTION'
+  | 'INVALID_POWER'
+  | 'FACTION_TAKEN';
 
 export interface ValidationResult {
   valid: boolean;

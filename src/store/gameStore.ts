@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { TerritoryId, TerritoryState } from '@/types/territory';
 import { Player } from '@/types/player';
-import { GamePhase, SubPhase } from '@/types/game';
+import { GamePhase, SubPhase, FactionId } from '@/types/game';
+import { factionsById } from '@/data/factions';
 import {
   validateAddTroop,
   validateRemoveTroop,
@@ -91,6 +92,9 @@ export interface GameStoreState {
   maneuverTroopsToMove: number | null;
   currentManeuverPath: TerritoryId[] | null;
 
+  // Setup phase state
+  setupTurnIndex: number; // Which player is currently selecting (0-indexed)
+
   // UI state
   selectedTerritory: TerritoryId | null;
   hoveredTerritory: TerritoryId | null;
@@ -158,6 +162,11 @@ export interface GameStoreActions {
   getCurrentManeuverPath: () => TerritoryId[] | null;
   getMaxManeuverTroops: () => number;
 
+  // Setup phase actions
+  selectFaction: (playerId: string, factionId: FactionId, powerId: string) => void;
+  getTakenFactions: () => FactionId[];
+  getSetupCurrentPlayer: () => Player | null;
+
   // Error handling
   clearError: () => void;
 }
@@ -192,6 +201,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   maneuverTargetTerritory: null,
   maneuverTroopsToMove: null,
   currentManeuverPath: null,
+  setupTurnIndex: 0,
   selectedTerritory: null,
   hoveredTerritory: null,
   lastError: null,
@@ -1176,5 +1186,102 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Clear error
   clearError: () => {
     set({ lastError: null });
+  },
+
+  // Select a faction and power for a player during setup
+  selectFaction: (playerId, factionId, powerId) => {
+    const state = get();
+
+    // Validate the faction exists
+    const faction = factionsById[factionId];
+    if (!faction) {
+      set({
+        lastError: {
+          valid: false,
+          errorCode: 'INVALID_FACTION',
+          errorMessage: 'Invalid faction selected',
+        },
+      });
+      return;
+    }
+
+    // Validate the power exists for this faction
+    const power = faction.powers.find((p) => p.id === powerId);
+    if (!power) {
+      set({
+        lastError: {
+          valid: false,
+          errorCode: 'INVALID_POWER',
+          errorMessage: 'Invalid power selected for this faction',
+        },
+      });
+      return;
+    }
+
+    // Validate the faction is not already taken
+    const takenFactions = state.players
+      .filter((p) => p.factionId && p.id !== playerId)
+      .map((p) => p.factionId);
+
+    if (takenFactions.includes(factionId)) {
+      set({
+        lastError: {
+          valid: false,
+          errorCode: 'FACTION_TAKEN',
+          errorMessage: 'This faction has already been selected by another player',
+        },
+      });
+      return;
+    }
+
+    // Update the player's faction and power
+    set((prev) => {
+      const updatedPlayers = prev.players.map((p) =>
+        p.id === playerId
+          ? {
+              ...p,
+              factionId,
+              activePower: powerId,
+              color: faction.color,
+            }
+          : p
+      );
+
+      // Check if all players have selected factions
+      const allSelected = updatedPlayers.every((p) => p.factionId && p.activePower);
+      const nextTurnIndex = prev.setupTurnIndex + 1;
+
+      // If all players have selected, move to HQ_PLACEMENT
+      if (allSelected || nextTurnIndex >= prev.players.length) {
+        return {
+          players: updatedPlayers,
+          setupTurnIndex: 0, // Reset for HQ placement
+          subPhase: 'HQ_PLACEMENT' as SubPhase,
+          lastError: null,
+        };
+      }
+
+      // Otherwise, move to next player's faction selection
+      return {
+        players: updatedPlayers,
+        setupTurnIndex: nextTurnIndex,
+        lastError: null,
+      };
+    });
+  },
+
+  // Get list of factions that have been taken by players
+  getTakenFactions: () => {
+    const state = get();
+    return state.players
+      .filter((p) => p.factionId)
+      .map((p) => p.factionId);
+  },
+
+  // Get the current player for setup phase (based on setupTurnIndex)
+  getSetupCurrentPlayer: () => {
+    const state = get();
+    if (state.phase !== 'SETUP') return null;
+    return state.players[state.setupTurnIndex] || null;
   },
 }));
