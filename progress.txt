@@ -172,7 +172,37 @@
     - Added availableDice computed from store
     - handleSelectDice callback calls selectAttackerDice
     - Passed availableDice and onSelectDice to ActionBar
-- [ ] 3. Build CombatModal with full flow
+- [x] 3. Build CombatModal with full flow (commit 4964992)
+  - Created src/utils/combatResolution.ts with combat resolution utilities:
+    - DieResult and CombatResult interfaces for tracking dice and outcomes
+    - rollDice(): Generates random values 1-6 for combat
+    - applyModifiers(): Applies scars, fortifications, faction powers in order
+    - resolveCombat(): Compares dice per spec (highest vs highest, ties to defender)
+    - checkSupremeFirepower(): Detects triple roll for instant 3 casualties
+    - getMaxDefenderDice/getAvailableDefenderDice: Defender dice limits (max 2)
+    - getConquestTroopRange(): Min/max troops to move after conquest
+    - validateSelectDefenderDice(): Validates defender dice selection
+  - Created src/components/game/CombatModal.tsx:
+    - Modal overlay with attacker vs defender territory info
+    - Shows faction emblems, territory names, and troop counts
+    - DEFENDER_DICE state: Dice selection buttons (1 or 2)
+    - RESOLVE state: Displays rolled dice with modifier annotations
+    - DieDisplay component shows original and modified values
+    - ComparisonDisplay shows each dice comparison result
+    - Casualty summary for both attacker and defender
+    - TROOP_MOVE state: Slider for conquest troop movement
+    - Full flow transitions: DEFENDER_DICE -> RESOLVE -> TROOP_MOVE -> IDLE
+  - Updated gameStore.ts with combat state and actions:
+    - Added defenderDiceCount, combatResult, attackerRawRolls, defenderRawRolls
+    - Added conquestTroopsToMove, isFirstAttackOfTurn state fields
+    - selectDefenderDice(): Validates and triggers dice rolling
+    - rollCombatDice(): Rolls dice and applies all modifiers
+    - resolveCombatResult(): Applies casualties to territories
+    - setConquestTroops/confirmConquest(): Handles territory takeover
+    - getMaxDefenderDice, getAvailableDefenderDice, getDefendingPlayer selectors
+  - Updated App.tsx to integrate CombatModal:
+    - Modal opens when subPhase is DEFENDER_DICE, RESOLVE, or TROOP_MOVE
+    - All combat action handlers wired up (dice selection, resolve, conquest)
 - [ ] 4. Add combat animations (dice roll, casualties)
 - [ ] 5. Implement conquest troop movement
 
