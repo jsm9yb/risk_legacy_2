@@ -5,6 +5,7 @@ import { continents } from '@/data/continents';
 import { TerritoryState, TerritoryId } from '@/types/territory';
 import { PhaseIndicator } from './PhaseIndicator';
 import { CardHand } from './CardHand';
+import { FactionEmblem } from '@/components/icons';
 
 interface PlayerSidebarProps {
   currentPlayer: Player;
@@ -128,14 +129,9 @@ export function PlayerSidebar({
             borderColor: faction?.color,
           }}
         >
-          {/* Faction Emblem placeholder + Name */}
+          {/* Faction Emblem + Name */}
           <div className="flex items-center gap-3 mb-2">
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold text-white"
-              style={{ backgroundColor: faction?.color }}
-            >
-              {faction?.name.charAt(0)}
-            </div>
+            <FactionEmblem factionId={currentPlayer.factionId} size={40} />
             <div>
               <div className="font-display text-board-parchment font-semibold text-sm">
                 {faction?.name}
@@ -198,10 +194,7 @@ export function PlayerSidebar({
                   <span className="font-numbers text-board-parchment/60 text-sm w-4">
                     {index + 1}.
                   </span>
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: playerFaction?.color }}
-                  />
+                  <FactionEmblem factionId={player.factionId} size={16} />
                   <span className="font-body text-board-parchment text-sm">
                     {isCurrentUser ? 'You' : `Player ${index + 1}`}
                     <span className="text-board-parchment/60 text-xs ml-1">
