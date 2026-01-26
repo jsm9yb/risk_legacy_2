@@ -130,7 +130,29 @@
   - Error state managed in store with auto-clear timeout in App.tsx
 
 ### Phase 4: Attack Phase
-- [ ] 1. Build attack source/target selection
+- [x] 1. Build attack source/target selection (commit aabc7dc)
+  - Created src/utils/attackValidation.ts with validation functions:
+    - validateSelectAttackSource(): Validates ownership, troop count >= 2, phase
+    - validateSelectAttackTarget(): Validates adjacency, enemy territory
+    - getAttackableTerritories(): Returns player territories with >= 2 troops
+    - getValidAttackTargets(): Returns adjacent enemy territories for attack
+  - Error codes match spec section 8.1: NOT_ADJACENT, CANNOT_ATTACK_OWN_TERRITORY
+  - Updated gameStore.ts with attack phase state:
+    - Added attackingTerritory and defendingTerritory state fields
+    - selectAttackSource(): Validates and transitions to SELECT_ATTACK sub-phase
+    - selectAttackTarget(): Validates adjacency, transitions to ATTACKER_DICE
+    - cancelAttack(): Resets attack state, returns to IDLE
+    - endAttackPhase(): Transitions to MANEUVER phase
+    - getSelectableTerritories() handles ATTACK phase sub-states
+    - getAttackableTerritories() and getValidAttackTargets() selectors
+  - Created AttackControls component in ActionBar.tsx:
+    - IDLE state: Prompt to select attack source, End Attack Phase button
+    - SELECT_ATTACK state: Shows attacking territory info, Cancel button
+    - ATTACKER_DICE state: Shows attack summary (source vs target with troops)
+  - Updated App.tsx:
+    - handleTerritoryClick routes to attack selection during ATTACK phase
+    - highlightedTerritories shows valid attack targets during SELECT_ATTACK
+    - Wired up cancelAttack and endAttackPhase callbacks to ActionBar
 - [ ] 2. Create dice count selector
 - [ ] 3. Build CombatModal with full flow
 - [ ] 4. Add combat animations (dice roll, casualties)
