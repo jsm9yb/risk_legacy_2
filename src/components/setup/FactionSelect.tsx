@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { FactionId } from '@/types/game';
-import { factions, Faction, FactionPower } from '@/data/factions';
+import { factions, Faction } from '@/data/factions';
 import { FactionEmblem } from '@/components/icons/FactionEmblems';
+import { PowerSelect } from './PowerSelect';
 
 interface FactionSelectProps {
   isOpen: boolean;
@@ -13,80 +14,6 @@ interface FactionSelectProps {
   onSelectFaction: (factionId: FactionId, powerId: string) => void;
   /** Callback to cancel selection (optional, for going back) */
   onCancel?: () => void;
-}
-
-/**
- * Power card component showing a single faction power option
- */
-function PowerCard({
-  power,
-  isSelected,
-  isDisabled,
-  onSelect,
-}: {
-  power: FactionPower;
-  isSelected: boolean;
-  isDisabled: boolean;
-  onSelect: () => void;
-}) {
-  // Map power type to badge color
-  const typeColors: Record<FactionPower['type'], string> = {
-    attack: 'bg-red-600',
-    defense: 'bg-blue-600',
-    recruitment: 'bg-green-600',
-    movement: 'bg-purple-600',
-    setup: 'bg-yellow-600',
-  };
-
-  return (
-    <button
-      onClick={onSelect}
-      disabled={isDisabled}
-      className={`
-        w-full p-4 rounded-lg border-2 text-left transition-all duration-200
-        ${
-          isSelected
-            ? 'bg-yellow-500/20 border-yellow-400 shadow-lg scale-105'
-            : isDisabled
-            ? 'bg-gray-800/50 border-gray-600 opacity-50 cursor-not-allowed'
-            : 'bg-board-wood/30 border-board-wood hover:border-yellow-400/50 hover:bg-board-wood/50 cursor-pointer'
-        }
-      `}
-    >
-      <div className="flex items-center gap-2 mb-2">
-        {/* Selection indicator */}
-        <div
-          className={`
-            w-5 h-5 rounded-full border-2 flex items-center justify-center
-            ${isSelected ? 'border-yellow-400 bg-yellow-400' : 'border-board-parchment/50'}
-          `}
-        >
-          {isSelected && (
-            <svg className="w-3 h-3 text-board-wood" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                clipRule="evenodd"
-              />
-            </svg>
-          )}
-        </div>
-
-        {/* Power name */}
-        <span className="font-display text-lg text-board-parchment">{power.name}</span>
-
-        {/* Type badge */}
-        <span
-          className={`ml-auto px-2 py-0.5 rounded text-xs font-body text-white uppercase ${typeColors[power.type]}`}
-        >
-          {power.type}
-        </span>
-      </div>
-
-      {/* Power description */}
-      <p className="text-sm text-board-parchment/70 font-body pl-7">{power.description}</p>
-    </button>
-  );
 }
 
 /**
@@ -201,12 +128,6 @@ export function FactionSelect({
   // Can confirm if both faction and power are selected
   const canConfirm = selectedFaction !== null && selectedPowerId !== null;
 
-  // Get the destroyed power (the one not selected)
-  const destroyedPower =
-    selectedFaction && selectedPowerId
-      ? selectedFaction.powers.find((p) => p.id !== selectedPowerId)
-      : null;
-
   if (!isOpen) return null;
 
   return (
@@ -247,46 +168,13 @@ export function FactionSelect({
           {/* Power Selection - only show when faction is selected */}
           {selectedFaction && (
             <div className="border-t-2 border-board-wood/50 pt-6">
-              <div className="flex items-center gap-3 mb-4">
-                <FactionEmblem factionId={selectedFaction.id} size={40} />
-                <div>
-                  <h3
-                    className="font-display text-2xl"
-                    style={{ color: selectedFaction.color }}
-                  >
-                    {selectedFaction.name}
-                  </h3>
-                  <p className="text-board-parchment/60 font-body text-sm">
-                    Choose ONE starting power (the other will be destroyed)
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {selectedFaction.powers.map((power) => (
-                  <PowerCard
-                    key={power.id}
-                    power={power}
-                    isSelected={selectedPowerId === power.id}
-                    isDisabled={false}
-                    onSelect={() => handlePowerSelect(power.id)}
-                  />
-                ))}
-              </div>
-
-              {/* Destroyed power warning */}
-              {destroyedPower && (
-                <div className="mt-4 bg-red-900/30 border border-red-600/50 rounded-lg p-4 text-center">
-                  <div className="text-red-400 font-display text-sm mb-1">
-                    WARNING: This choice is permanent
-                  </div>
-                  <div className="text-board-parchment/70 font-body text-sm">
-                    &quot;{destroyedPower.name}&quot; will be{' '}
-                    <span className="text-red-400 font-bold">destroyed</span> and unavailable
-                    for the rest of the campaign
-                  </div>
-                </div>
-              )}
+              <PowerSelect
+                faction={selectedFaction}
+                selectedPowerId={selectedPowerId}
+                onSelectPower={handlePowerSelect}
+                showFactionHeader={true}
+                showDestroyedWarning={true}
+              />
             </div>
           )}
 

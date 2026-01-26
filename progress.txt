@@ -304,7 +304,15 @@
   - Added setupTurnIndex state for tracking turn order during setup
   - Extended DeploymentErrorCode with INVALID_FACTION, INVALID_POWER, FACTION_TAKEN
   - Integrated with App.tsx showing modal during SETUP/FACTION_SELECTION phase
-- [ ] 2. Build PowerSelect interface
+- [x] 2. Build PowerSelect interface
+  - Created src/components/setup/PowerSelect.tsx as standalone component
+  - PowerSelect shows both power options for a given faction
+  - PowerCard displays power name, type badge, description with radio-style selection
+  - Type badges color-coded: attack (red), defense (blue), recruitment (green), movement (purple), setup (yellow)
+  - Configurable options: showFactionHeader, showDestroyedWarning, disabled state
+  - PowerDisplay component for read-only view of active/destroyed powers during gameplay
+  - Refactored FactionSelect to use PowerSelect component
+  - Created src/components/setup/index.ts for clean exports
 - [ ] 3. Implement HQ placement with validation
 
 ### Phase 7: Victory & Polish
