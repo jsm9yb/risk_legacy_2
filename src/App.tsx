@@ -6,6 +6,7 @@ import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { CombatModal } from './components/game/CombatModal';
 import { FactionSelect } from './components/setup/FactionSelect';
 import { HQPlacement } from './components/setup/HQPlacement';
+import { VictoryModal } from './components/game/VictoryModal';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
@@ -168,6 +169,10 @@ function App() {
     placeHQ,
     getLegalHQTerritories,
     getPlacedHQs,
+    victoryResult,
+    getWinner,
+    dismissVictory,
+    status,
   } = useGameStore();
 
   // Local state for tooltip position (UI-only, doesn't need to be in store)
@@ -251,6 +256,10 @@ function App() {
   const isValidHQSelection = selectedTerritory
     ? legalHQTerritories.includes(selectedTerritory)
     : false;
+
+  // Victory modal state
+  const isVictoryModalOpen = status === 'finished' && victoryResult?.isVictory === true;
+  const winner = getWinner();
 
   // Determine if combat modal should be open
   const isCombatModalOpen =
@@ -547,6 +556,18 @@ function App() {
           onConfirmPlacement={handlePlaceHQ}
           errorMessage={lastError && !lastError.valid ? lastError.errorMessage || null : null}
           placedHQs={placedHQs}
+        />
+      )}
+
+      {/* Victory Modal */}
+      {isVictoryModalOpen && winner && victoryResult && (
+        <VictoryModal
+          isOpen={isVictoryModalOpen}
+          winner={winner}
+          condition={victoryResult.condition!}
+          players={players}
+          territories={territoryStates}
+          onContinue={dismissVictory}
         />
       )}
     </div>

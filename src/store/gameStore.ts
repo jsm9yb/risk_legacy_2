@@ -46,6 +46,10 @@ import {
   getStartingTroops,
   HQValidationResult,
 } from '@/utils/hqValidation';
+import {
+  checkVictory,
+  VictoryResult,
+} from '@/utils/victoryDetection';
 
 /**
  * Deployment history entry for tracking troop placements
@@ -100,6 +104,10 @@ export interface GameStoreState {
 
   // Setup phase state
   setupTurnIndex: number; // Which player is currently selecting (0-indexed)
+
+  // Victory state
+  victoryResult: VictoryResult | null;
+  winnerId: string | null;
 
   // UI state
   selectedTerritory: TerritoryId | null;
@@ -176,6 +184,11 @@ export interface GameStoreActions {
   getLegalHQTerritories: (playerId: string) => TerritoryId[];
   getPlacedHQs: () => Array<{ playerName: string; factionId: string; territoryName: string }>;
 
+  // Victory actions
+  checkForVictory: () => VictoryResult;
+  getWinner: () => Player | null;
+  dismissVictory: () => void;
+
   // Error handling
   clearError: () => void;
 }
@@ -211,6 +224,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   maneuverTroopsToMove: null,
   currentManeuverPath: null,
   setupTurnIndex: 0,
+  victoryResult: null,
+  winnerId: null,
   selectedTerritory: null,
   hoveredTerritory: null,
   lastError: null,
@@ -886,6 +901,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const currentPlayer = state.players[0];
     if (!currentPlayer) return;
 
+    // Check if conquering an enemy HQ
+    const defendingTerritoryId = state.defendingTerritory;
+    const enemyHQOwner = state.players.find(
+      (p) => p.id !== currentPlayer.id && p.hqTerritory === defendingTerritoryId
+    );
+
     set((prev) => {
       const updatedTerritories = { ...prev.territories };
       const troopsToMove = prev.conquestTroopsToMove || 1;
@@ -907,10 +928,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
         };
       }
 
-      // Update conqueredThisTurn for card draw eligibility
-      const updatedPlayers = prev.players.map((p) =>
-        p.id === currentPlayer.id ? { ...p, conqueredThisTurn: true } : p
+      // Update players
+      let updatedPlayers = prev.players.map((p) => {
+        if (p.id === currentPlayer.id) {
+          // Award a red star if capturing enemy HQ
+          const newStars = enemyHQOwner ? p.redStars + 1 : p.redStars;
+          return { ...p, conqueredThisTurn: true, redStars: newStars };
+        }
+        // Remove star from player who lost their HQ
+        if (enemyHQOwner && p.id === enemyHQOwner.id) {
+          return { ...p, redStars: Math.max(0, p.redStars - 1) };
+        }
+        return p;
+      });
+
+      // Check if defender is eliminated (no territories left)
+      const defendingPlayer = prev.players.find(
+        (p) => p.id !== currentPlayer.id && updatedTerritories[prev.defendingTerritory!]
       );
+      if (defendingPlayer) {
+        const defenderTerritoryCount = Object.values(updatedTerritories).filter(
+          (t) => t.ownerId === defendingPlayer.id
+        ).length;
+        if (defenderTerritoryCount === 0) {
+          updatedPlayers = updatedPlayers.map((p) =>
+            p.id === defendingPlayer.id ? { ...p, isEliminated: true } : p
+          );
+        }
+      }
 
       return {
         territories: updatedTerritories,
@@ -926,6 +971,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         conquestTroopsToMove: null,
       };
     });
+
+    // Check for victory after conquest
+    get().checkForVictory();
   },
 
   // Cancel the current attack (go back to IDLE)
@@ -1397,5 +1445,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
         factionId: p.factionId,
         territoryName: state.territories[p.hqTerritory]?.name || p.hqTerritory,
       }));
+  },
+
+  // Check for victory conditions and update state if victory achieved
+  checkForVictory: () => {
+    const state = get();
+    const result = checkVictory(state.players);
+
+    if (result.isVictory) {
+      set({
+        victoryResult: result,
+        winnerId: result.winnerId,
+        status: 'finished',
+      });
+    }
+
+    return result;
+  },
+
+  // Get the winning player
+  getWinner: () => {
+    const state = get();
+    if (!state.winnerId) return null;
+    return state.players.find((p) => p.id === state.winnerId) || null;
+  },
+
+  // Dismiss victory modal (for moving to write phase)
+  dismissVictory: () => {
+    // In a full implementation, this would transition to write phase
+    // For now, just keep the victory state for display
+    console.log('Victory acknowledged. Transitioning to Write Phase...');
   },
 }));

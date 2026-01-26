@@ -333,7 +333,28 @@
   - Added name field to Player interface for display purposes
 
 ### Phase 7: Victory & Polish
-- [ ] 1. Victory detection and modal
+- [x] 1. Victory detection and modal
+  - Created src/utils/victoryDetection.ts with detection logic:
+    - checkVictory(): Checks all victory conditions
+    - checkStarVictory(): Detects 4+ red stars (STARS_FOR_VICTORY = 4)
+    - checkLastStandingVictory(): Detects last player remaining
+    - calculateVictoryStats(): Computes final stats for display
+    - checkElimination(): Detects player with 0 territories
+  - Created src/components/game/VictoryModal.tsx:
+    - Trophy animation with faction emblem
+    - Winner info with star display
+    - Final statistics (territories, troops, HQs captured, cards traded)
+    - Final standings showing all players ranked
+    - "Continue to Write Phase" button
+  - Updated gameStore.ts with victory integration:
+    - Added victoryResult and winnerId state fields
+    - checkForVictory(): Checks and updates victory state
+    - getWinner(): Returns winning player
+    - dismissVictory(): Acknowledges victory for phase transition
+    - confirmConquest() now awards stars for capturing enemy HQs
+    - confirmConquest() marks players as eliminated when they lose all territories
+    - Victory check runs after conquest
+  - Integrated VictoryModal into App.tsx
 - [ ] 2. Game log implementation
 - [ ] 3. Sound effects
 - [ ] 4. Animations and transitions
