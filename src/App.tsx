@@ -5,6 +5,7 @@ import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { CombatModal } from './components/game/CombatModal';
 import { FactionSelect } from './components/setup/FactionSelect';
+import { HQPlacement } from './components/setup/HQPlacement';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
@@ -15,6 +16,7 @@ import { useGameStore } from './store/gameStore';
 const mockPlayers: Player[] = [
   {
     id: 'player-1',
+    name: 'Jordan',
     gameId: 'game-1',
     userId: 'user-1',
     seatIndex: 0,
@@ -30,6 +32,7 @@ const mockPlayers: Player[] = [
   },
   {
     id: 'player-2',
+    name: 'Alex',
     gameId: 'game-1',
     userId: 'user-2',
     seatIndex: 1,
@@ -45,6 +48,7 @@ const mockPlayers: Player[] = [
   },
   {
     id: 'player-3',
+    name: 'Sam',
     gameId: 'game-1',
     userId: 'user-3',
     seatIndex: 2,
@@ -60,6 +64,7 @@ const mockPlayers: Player[] = [
   },
   {
     id: 'player-4',
+    name: 'Jo',
     gameId: 'game-1',
     userId: 'user-4',
     seatIndex: 3,
@@ -160,6 +165,9 @@ function App() {
     getTakenFactions,
     getSetupCurrentPlayer,
     setupTurnIndex,
+    placeHQ,
+    getLegalHQTerritories,
+    getPlacedHQs,
   } = useGameStore();
 
   // Local state for tooltip position (UI-only, doesn't need to be in store)
@@ -230,6 +238,20 @@ function App() {
   // Determine if faction select should be open
   const isFactionSelectOpen = phase === 'SETUP' && subPhase === 'FACTION_SELECTION';
 
+  // Determine if HQ placement should be open
+  const isHQPlacementOpen = phase === 'SETUP' && subPhase === 'HQ_PLACEMENT';
+
+  // Get HQ placement data
+  const legalHQTerritories = setupCurrentPlayer
+    ? getLegalHQTerritories(setupCurrentPlayer.id)
+    : [];
+  const placedHQs = getPlacedHQs();
+
+  // Check if selected territory is valid for HQ placement
+  const isValidHQSelection = selectedTerritory
+    ? legalHQTerritories.includes(selectedTerritory)
+    : false;
+
   // Determine if combat modal should be open
   const isCombatModalOpen =
     phase === 'ATTACK' &&
@@ -238,6 +260,13 @@ function App() {
     (subPhase === 'DEFENDER_DICE' || subPhase === 'RESOLVE' || subPhase === 'TROOP_MOVE');
 
   const handleTerritoryClick = useCallback((territoryId: TerritoryId) => {
+    // During HQ placement, handle territory selection
+    if (phase === 'SETUP' && subPhase === 'HQ_PLACEMENT') {
+      // Just select the territory, validation happens in the modal
+      setSelectedTerritory(territoryId);
+      return;
+    }
+
     // During attack phase, handle source/target selection
     if (phase === 'ATTACK') {
       if (subPhase === 'IDLE') {
@@ -323,8 +352,30 @@ function App() {
     console.log(`Player ${setupCurrentPlayer.id} selected faction ${factionId} with power ${powerId}`);
   }, [setupCurrentPlayer, selectFaction]);
 
+  // Handle HQ placement confirmation
+  const handlePlaceHQ = useCallback(() => {
+    if (!setupCurrentPlayer || !selectedTerritory) return;
+    placeHQ(setupCurrentPlayer.id, selectedTerritory);
+    console.log(`Player ${setupCurrentPlayer.id} placed HQ at ${selectedTerritory}`);
+    setSelectedTerritory(null);
+  }, [setupCurrentPlayer, selectedTerritory, placeHQ, setSelectedTerritory]);
+
+  // Calculate starting troops for HQ placement display
+  const getStartingTroopsForDisplay = useCallback(() => {
+    if (!setupCurrentPlayer) return 8;
+    // Balkania's "Established" power gives 10 troops instead of 8
+    if (setupCurrentPlayer.factionId === 'balkania' && setupCurrentPlayer.activePower === 'established') {
+      return 10;
+    }
+    return 8;
+  }, [setupCurrentPlayer]);
+
   // Get highlighted territories based on phase
   const highlightedTerritories = (() => {
+    // During HQ placement, highlight legal territories
+    if (phase === 'SETUP' && subPhase === 'HQ_PLACEMENT') {
+      return legalHQTerritories;
+    }
     // During attack phase SELECT_ATTACK, highlight valid attack targets
     if (phase === 'ATTACK' && subPhase === 'SELECT_ATTACK' && attackingTerritory) {
       return getValidAttackTargets();
@@ -341,6 +392,16 @@ function App() {
     return selectedTerritory
       ? territories.find((t) => t.id === selectedTerritory)?.neighbors || []
       : [];
+  })();
+
+  // Determine selectable territories for current phase
+  const effectiveSelectableTerritories = (() => {
+    // During HQ placement, only legal territories are selectable
+    if (phase === 'SETUP' && subPhase === 'HQ_PLACEMENT') {
+      return legalHQTerritories;
+    }
+    // Otherwise use store's selectable territories
+    return selectableTerritories;
   })();
 
   // Don't render until store is initialized
@@ -394,7 +455,7 @@ function App() {
               onTerritoryHover={handleTerritoryHover}
               selectedTerritory={selectedTerritory}
               highlightedTerritories={highlightedTerritories}
-              selectableTerritories={selectableTerritories}
+              selectableTerritories={effectiveSelectableTerritories}
               pendingDeployments={pendingDeployments}
             />
           </div>
@@ -471,6 +532,21 @@ function App() {
           currentPlayerName={`Player ${setupTurnIndex + 1}`}
           takenFactions={takenFactions}
           onSelectFaction={handleSelectFaction}
+        />
+      )}
+
+      {/* HQ Placement Modal */}
+      {isHQPlacementOpen && setupCurrentPlayer && (
+        <HQPlacement
+          isOpen={isHQPlacementOpen}
+          currentPlayer={setupCurrentPlayer}
+          selectedTerritory={selectedTerritory}
+          selectedTerritoryName={selectedTerritory ? territoryStates[selectedTerritory]?.name || null : null}
+          isValidSelection={isValidHQSelection}
+          startingTroops={getStartingTroopsForDisplay()}
+          onConfirmPlacement={handlePlaceHQ}
+          errorMessage={lastError && !lastError.valid ? lastError.errorMessage || null : null}
+          placedHQs={placedHQs}
         />
       )}
     </div>

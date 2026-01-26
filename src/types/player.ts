@@ -2,6 +2,7 @@ import { FactionId } from './game';
 
 export interface Player {
   id: string;
+  name: string;
   gameId: string;
   userId: string;
   seatIndex: number;

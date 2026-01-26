@@ -40,6 +40,12 @@ import {
   getMaxManeuverTroops,
   ManeuverValidationResult,
 } from '@/utils/maneuverValidation';
+import {
+  validateHQPlacement,
+  getLegalHQTerritories as getValidHQTerritories,
+  getStartingTroops,
+  HQValidationResult,
+} from '@/utils/hqValidation';
 
 /**
  * Deployment history entry for tracking troop placements
@@ -100,7 +106,7 @@ export interface GameStoreState {
   hoveredTerritory: TerritoryId | null;
 
   // Validation error
-  lastError: ValidationResult | AttackValidationResult | null;
+  lastError: ValidationResult | AttackValidationResult | HQValidationResult | null;
 }
 
 /**
@@ -166,6 +172,9 @@ export interface GameStoreActions {
   selectFaction: (playerId: string, factionId: FactionId, powerId: string) => void;
   getTakenFactions: () => FactionId[];
   getSetupCurrentPlayer: () => Player | null;
+  placeHQ: (playerId: string, territoryId: TerritoryId) => void;
+  getLegalHQTerritories: (playerId: string) => TerritoryId[];
+  getPlacedHQs: () => Array<{ playerName: string; factionId: string; territoryName: string }>;
 
   // Error handling
   clearError: () => void;
@@ -1283,5 +1292,110 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const state = get();
     if (state.phase !== 'SETUP') return null;
     return state.players[state.setupTurnIndex] || null;
+  },
+
+  // Place HQ on a territory
+  placeHQ: (playerId, territoryId) => {
+    const state = get();
+
+    // Validate HQ placement
+    const validation = validateHQPlacement(
+      territoryId,
+      state.territories,
+      state.players,
+      playerId,
+      state.setupTurnIndex,
+      state.subPhase
+    );
+
+    if (!validation.valid) {
+      set({ lastError: validation });
+      return;
+    }
+
+    // Get the player
+    const player = state.players.find((p) => p.id === playerId);
+    if (!player) {
+      set({
+        lastError: {
+          valid: false,
+          errorCode: 'INVALID_TERRITORY',
+          errorMessage: 'Player not found',
+        },
+      });
+      return;
+    }
+
+    // Calculate starting troops
+    const startingTroops = getStartingTroops(player);
+
+    set((prev) => {
+      // Update territory ownership and troops
+      const updatedTerritories = {
+        ...prev.territories,
+        [territoryId]: {
+          ...prev.territories[territoryId],
+          ownerId: playerId,
+          troopCount: startingTroops,
+        },
+      };
+
+      // Update player's HQ territory and add starting red star
+      const updatedPlayers = prev.players.map((p) =>
+        p.id === playerId
+          ? {
+              ...p,
+              hqTerritory: territoryId,
+              redStars: 1, // Own HQ gives 1 star
+            }
+          : p
+      );
+
+      // Check if all players have placed HQs
+      const allPlaced = updatedPlayers.every((p) => p.hqTerritory);
+      const nextTurnIndex = prev.setupTurnIndex + 1;
+
+      if (allPlaced || nextTurnIndex >= prev.players.length) {
+        // Transition to active game phase
+        return {
+          territories: updatedTerritories,
+          players: updatedPlayers,
+          setupTurnIndex: 0,
+          phase: 'RECRUIT' as GamePhase,
+          subPhase: 'PLACE_TROOPS' as SubPhase,
+          status: 'active',
+          currentTurn: 1,
+          activePlayerId: updatedPlayers[0]?.id || null,
+          troopsToPlace: 0, // Will be calculated when reinforcement phase starts
+          lastError: null,
+        };
+      }
+
+      // Move to next player's HQ placement
+      return {
+        territories: updatedTerritories,
+        players: updatedPlayers,
+        setupTurnIndex: nextTurnIndex,
+        lastError: null,
+      };
+    });
+  },
+
+  // Get list of legal territories for HQ placement
+  getLegalHQTerritories: (playerId) => {
+    const state = get();
+    return getValidHQTerritories(state.territories, state.players, playerId);
+  },
+
+  // Get list of players who have already placed HQs
+  getPlacedHQs: () => {
+    const state = get();
+    return state.players
+      .filter((p) => p.hqTerritory)
+      .map((p) => ({
+        playerName: p.name,
+        factionId: p.factionId,
+        territoryName: state.territories[p.hqTerritory]?.name || p.hqTerritory,
+      }));
   },
 }));

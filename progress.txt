@@ -313,7 +313,24 @@
   - PowerDisplay component for read-only view of active/destroyed powers during gameplay
   - Refactored FactionSelect to use PowerSelect component
   - Created src/components/setup/index.ts for clean exports
-- [ ] 3. Implement HQ placement with validation
+- [x] 3. Implement HQ placement with validation
+  - Created src/utils/hqValidation.ts with validation utilities:
+    - validateHQPlacement(): Validates territory legality, adjacency rules, phase
+    - getLegalHQTerritories(): Returns territories available for HQ placement
+    - isLegalHQTerritory(): Checks unmarked OR player's major city, NOT adjacent to other HQ
+    - getStartingTroops(): Returns 8 (or 10 for Balkania's Established power)
+  - Created src/components/setup/HQPlacement.tsx component:
+    - Floating instruction panel showing current player and faction
+    - Map highlights legal territories in green
+    - Selected territory display with validation status
+    - Shows list of already-placed HQs
+    - Confirm button places HQ + starting troops
+  - Updated gameStore.ts with HQ placement actions:
+    - placeHQ(): Validates and places HQ on territory with troops
+    - getLegalHQTerritories(): Returns legal territories for a player
+    - getPlacedHQs(): Returns list of players who have placed HQs
+  - Integrated with App.tsx for HQ_PLACEMENT sub-phase
+  - Added name field to Player interface for display purposes
 
 ### Phase 7: Victory & Polish
 - [ ] 1. Victory detection and modal
