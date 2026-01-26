@@ -5,7 +5,7 @@ import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
-import { GamePhase } from './types/game';
+import { GamePhase, SubPhase } from './types/game';
 
 // Mock player data for demonstration
 const mockPlayers: Player[] = [
@@ -111,6 +111,8 @@ function App() {
   const activePlayerId = 'player-1';
   const currentTurn = 5;
   const phase: GamePhase = 'ATTACK';
+  const subPhase: SubPhase = 'IDLE';
+  const troopsRemaining = 0;
 
   const handleTerritoryClick = (territoryId: TerritoryId) => {
     setSelectedTerritory((prev) => (prev === territoryId ? null : territoryId));
@@ -156,7 +158,9 @@ function App() {
           activePlayerId={activePlayerId}
           currentTurn={currentTurn}
           phase={phase}
+          subPhase={subPhase}
           territories={territoryStates}
+          troopsRemaining={troopsRemaining}
         />
 
         {/* Main game area */}

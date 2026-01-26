@@ -1,8 +1,9 @@
 import { Player } from '@/types/player';
-import { GamePhase } from '@/types/game';
+import { GamePhase, SubPhase } from '@/types/game';
 import { factionsById } from '@/data/factions';
 import { continents } from '@/data/continents';
 import { TerritoryState, TerritoryId } from '@/types/territory';
+import { PhaseIndicator } from './PhaseIndicator';
 
 interface PlayerSidebarProps {
   currentPlayer: Player;
@@ -10,7 +11,9 @@ interface PlayerSidebarProps {
   activePlayerId: string;
   currentTurn: number;
   phase: GamePhase;
+  subPhase: SubPhase;
   territories: Record<TerritoryId, TerritoryState>;
+  troopsRemaining?: number;
 }
 
 // Calculate reinforcement preview for a player
@@ -92,7 +95,9 @@ export function PlayerSidebar({
   activePlayerId,
   currentTurn,
   phase,
+  subPhase,
   territories,
+  troopsRemaining,
 }: PlayerSidebarProps) {
   const faction = factionsById[currentPlayer.factionId];
   const power = faction?.powers.find((p) => p.id === currentPlayer.activePower);
@@ -215,30 +220,13 @@ export function PlayerSidebar({
 
       {/* Phase Indicator */}
       <div className="p-4 border-b border-board-wood">
-        <h2 className="text-xs uppercase tracking-wider text-board-parchment/60 mb-2 font-body">
-          Phase Indicator
-        </h2>
-        <div className="text-board-parchment font-display text-lg">
-          Turn {currentTurn}
-        </div>
-        <div className="text-board-parchment/80 font-body text-sm">
-          {activePlayerId === currentPlayer.id ? 'Your turn' : 'Waiting...'}
-        </div>
-        <div className="mt-2 flex gap-1">
-          {(['SETUP', 'RECRUIT', 'ATTACK', 'MANEUVER'] as const).map((p) => (
-            <div
-              key={p}
-              className={`
-                flex-1 h-2 rounded-full
-                ${phase === p ? 'bg-yellow-500' : 'bg-board-wood'}
-              `}
-              title={p}
-            />
-          ))}
-        </div>
-        <div className="mt-1 text-xs text-board-parchment/60 font-body uppercase">
-          {phase}
-        </div>
+        <PhaseIndicator
+          currentTurn={currentTurn}
+          phase={phase}
+          subPhase={subPhase}
+          isYourTurn={activePlayerId === currentPlayer.id}
+          troopsRemaining={troopsRemaining}
+        />
       </div>
 
       {/* Card Hand Preview */}
