@@ -240,7 +240,33 @@
   - confirmConquest() in gameStore.ts properly transfers ownership and moves troops
 
 ### Phase 5: Maneuver Phase
-- [ ] 1. Build path validation display
+- [x] 1. Build path validation display (commit fada90c)
+  - Created src/utils/maneuverValidation.ts with pathfinding utilities:
+    - findPath(): BFS pathfinding through owned territories only
+    - getReachableTerritories(): Returns all reachable territories with paths
+    - validateSelectManeuverSource(): Validates ownership, troop count >= 2
+    - validateSelectManeuverTarget(): Validates path exists through owned territories
+    - getManeuverableTerritories(): Returns territories with >= 2 troops
+    - getValidManeuverTargets(): Returns reachable owned territories
+    - getMaxManeuverTroops(): Calculate max troops (territory troops - 1)
+  - Error codes: NO_PATH, SAME_TERRITORY (plus existing codes)
+  - Updated src/types/game.ts with maneuver sub-phases:
+    - SELECT_MANEUVER_SOURCE, SELECT_MANEUVER_TARGET, SET_MANEUVER_TROOPS
+  - Updated gameStore.ts with maneuver state and actions:
+    - Added maneuverSourceTerritory, maneuverTargetTerritory, currentManeuverPath
+    - selectManeuverSource(): Validates and sets source territory
+    - selectManeuverTarget(): Validates path exists, stores path for display
+    - cancelManeuver(): Resets maneuver state
+    - skipManeuver(): Skips maneuver and ends turn
+    - getSelectableTerritories() handles MANEUVER phase sub-states
+  - Updated App.tsx for maneuver phase:
+    - handleTerritoryClick routes to maneuver selection during MANEUVER phase
+    - highlightedTerritories shows valid targets or selected path
+  - Created ManeuverControls component in ActionBar.tsx:
+    - SELECT_MANEUVER_SOURCE: Shows prompt, Skip button
+    - SELECT_MANEUVER_TARGET: Shows source territory, Cancel/Skip buttons
+    - SET_MANEUVER_TROOPS: Shows path summary with territory names
+  - Updated PhaseIndicator.tsx with maneuver sub-phase display names
 - [ ] 2. Create maneuver controls
 - [ ] 3. Implement troop movement slider
 
