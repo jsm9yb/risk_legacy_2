@@ -292,7 +292,18 @@
   - All wiring complete in App.tsx and gameStore.ts
 
 ### Phase 6: Setup Phase
-- [ ] 1. Create FactionSelect screen
+- [x] 1. Create FactionSelect screen (commit 3605101)
+  - Created src/components/setup/FactionSelect.tsx component
+  - Shows all 5 factions as selectable cards with faction emblems
+  - Displays both power options for selected faction
+  - Power selection with radio-style buttons and clear descriptions
+  - Warning message about destroyed power being permanent
+  - Visual indicators for taken factions (disabled, grayed out)
+  - Responsive grid layout (2 cols on mobile, 3 on tablet, 5 on desktop)
+  - Added store actions: selectFaction, getTakenFactions, getSetupCurrentPlayer
+  - Added setupTurnIndex state for tracking turn order during setup
+  - Extended DeploymentErrorCode with INVALID_FACTION, INVALID_POWER, FACTION_TAKEN
+  - Integrated with App.tsx showing modal during SETUP/FACTION_SELECTION phase
 - [ ] 2. Build PowerSelect interface
 - [ ] 3. Implement HQ placement with validation
 
