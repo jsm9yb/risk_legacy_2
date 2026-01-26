@@ -9,6 +9,7 @@ interface GameBoardProps {
   onTerritoryHover?: (territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => void;
   selectedTerritory?: TerritoryId | null;
   highlightedTerritories?: TerritoryId[];
+  selectableTerritories?: TerritoryId[];
 }
 
 // Calculate center point for a territory path (for placing troop badges)
@@ -26,11 +27,16 @@ export function GameBoard({
   onTerritoryHover,
   selectedTerritory,
   highlightedTerritories = [],
+  selectableTerritories,
 }: GameBoardProps) {
   const svgContainerRef = useRef<HTMLDivElement>(null);
   const [svgContent, setSvgContent] = useState<string>('');
   const [territoryCenters, setTerritoryCenters] = useState<Record<string, { x: number; y: number }>>({});
   const [isLoaded, setIsLoaded] = useState(false);
+
+  // Use refs to access current values in event handlers without recreating listeners
+  const selectableTerritoriesRef = useRef(selectableTerritories);
+  selectableTerritoriesRef.current = selectableTerritories;
 
   // Load the SVG content
   useEffect(() => {
@@ -60,12 +66,17 @@ export function GameBoard({
         centers[territory.id] = getPathCenter(pathElement);
 
         // Style the territory path
-        pathElement.style.cursor = 'pointer';
-        pathElement.style.transition = 'fill 0.2s, stroke 0.2s, filter 0.2s';
+        pathElement.style.transition = 'fill 0.2s, stroke 0.2s, filter 0.2s, opacity 0.2s';
 
-        // Add event listeners
+        // Add event listeners - only trigger click if territory is selectable
         pathElement.addEventListener('click', () => {
-          onTerritoryClick?.(territory.id);
+          // If selectableTerritories is undefined, all territories are selectable
+          // If it's defined, only territories in the array are selectable
+          // Use ref to get current value at click time
+          const currentSelectable = selectableTerritoriesRef.current;
+          if (!currentSelectable || currentSelectable.includes(territory.id)) {
+            onTerritoryClick?.(territory.id);
+          }
         });
 
         pathElement.addEventListener('mouseenter', (e: MouseEvent) => {
@@ -102,11 +113,17 @@ export function GameBoard({
       // Base color from continent
       const fillColor = continent?.color || '#cccccc';
 
+      // Check if territory is selectable
+      // If selectableTerritories is undefined, all territories are selectable
+      const isSelectable = !selectableTerritories || selectableTerritories.includes(territory.id);
+
       pathElement.style.fill = fillColor;
       pathElement.style.stroke = '#333';
       pathElement.style.strokeWidth = '1';
+      pathElement.style.cursor = isSelectable ? 'pointer' : 'not-allowed';
+      pathElement.style.opacity = isSelectable ? '1' : '0.5';
 
-      // Selection and highlight states
+      // Selection and highlight states (only apply full effects to selectable territories)
       if (selectedTerritory === territory.id) {
         pathElement.style.stroke = '#FFD700';
         pathElement.style.strokeWidth = '3';
@@ -115,11 +132,16 @@ export function GameBoard({
         pathElement.style.stroke = '#00FF00';
         pathElement.style.strokeWidth = '2';
         pathElement.style.filter = 'drop-shadow(0 0 4px rgba(0, 255, 0, 0.5))';
+      } else if (isSelectable && selectableTerritories) {
+        // Subtle highlight for selectable territories during restricted selection mode
+        pathElement.style.stroke = '#4A90A4';
+        pathElement.style.strokeWidth = '1.5';
+        pathElement.style.filter = 'drop-shadow(0 0 2px rgba(74, 144, 164, 0.4))';
       } else {
         pathElement.style.filter = 'none';
       }
     });
-  }, [territoryStates, selectedTerritory, highlightedTerritories, isLoaded]);
+  }, [territoryStates, selectedTerritory, highlightedTerritories, selectableTerritories, isLoaded]);
 
   return (
     <div className="relative w-full h-full bg-board-sea overflow-hidden">

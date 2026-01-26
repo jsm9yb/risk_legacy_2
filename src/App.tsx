@@ -110,9 +110,9 @@ function App() {
   const currentPlayer = mockPlayers[0];
   const activePlayerId = 'player-1';
   const currentTurn = 5;
-  const phase: GamePhase = 'ATTACK';
-  const subPhase: SubPhase = 'IDLE';
-  const troopsRemaining = 0;
+  const phase: GamePhase = 'RECRUIT';
+  const subPhase: SubPhase = 'PLACE_TROOPS';
+  const troopsRemaining = 8;
 
   const handleTerritoryClick = (territoryId: TerritoryId) => {
     setSelectedTerritory((prev) => (prev === territoryId ? null : territoryId));
@@ -129,6 +129,19 @@ function App() {
   const highlightedTerritories = selectedTerritory
     ? territories.find((t) => t.id === selectedTerritory)?.neighbors || []
     : [];
+
+  // Compute selectable territories based on game phase
+  // During RECRUIT phase, only current player's territories are selectable
+  const selectableTerritories = (() => {
+    if (phase === 'RECRUIT' && subPhase === 'PLACE_TROOPS') {
+      // Only territories owned by the current player are selectable for troop placement
+      return Object.values(territoryStates)
+        .filter((t) => t.ownerId === currentPlayer.id)
+        .map((t) => t.id);
+    }
+    // For other phases, return undefined to allow all territories to be selectable
+    return undefined;
+  })();
 
   return (
     <div className="flex flex-col h-screen bg-board-wood">
@@ -172,6 +185,7 @@ function App() {
               onTerritoryHover={handleTerritoryHover}
               selectedTerritory={selectedTerritory}
               highlightedTerritories={highlightedTerritories}
+              selectableTerritories={selectableTerritories}
             />
           </div>
         </main>

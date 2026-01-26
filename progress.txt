@@ -1,0 +1,110 @@
+# Risk Legacy Implementation Progress
+
+## Section 20: Implementation Order
+
+### Phase 1: Static Map Display
+- [x] 1. Create base GameBoard component with SVG map (commit ecb9bb1)
+  - Created React + Vite + TypeScript project structure
+  - Added Tailwind CSS with Risk Legacy theme
+  - GameBoard component loads and displays the SVG map
+  - Territory and continent data files created
+  - Type definitions for Territory, Game, Player
+  - Territory selection and highlighting working
+  - Troop count badges displayed on territories
+  - Continent-based color fills implemented
+- [x] 2. Render all 42 territories with placeholder data (commit 45529cb)
+  - Fixed Yakutsk territory ID typo in SVG map (yakursk -> yakutsk)
+  - All 42 territory IDs now match between SVG map and territory data
+  - Placeholder state with random troop counts created for all territories
+  - All territories are interactive (click/hover) and display correctly
+- [x] 3. Add continent color fills (completed in Task 1)
+  - Continent colors defined in continents.ts with 6 distinct colors
+  - GameBoard applies continent color to each territory via continentByTerritory lookup
+- [x] 4. Display troop counts (completed in Task 1)
+  - Troop count badges rendered as SVG overlay
+  - Badges positioned at calculated territory centers
+- [x] 5. Implement hover tooltips (commit 443d0c0)
+  - Created TerritoryTooltip component showing name, continent, owner, troops, modifiers
+  - Tooltip follows mouse cursor while hovering over territories
+  - Displays scars, cities, and fortification status when present
+
+### Phase 2: Player UI
+- [x] 1. Build PlayerSidebar with mock player data (commit b42ee46)
+  - Created src/data/factions.ts with all 5 factions and their powers
+  - Built PlayerSidebar component (src/components/game/PlayerSidebar.tsx)
+  - Shows current player status: faction emblem, name, active power
+  - Displays red stars (filled/empty icons), missiles with rocket icons
+  - Territory count and reinforcement preview with calculation breakdown
+  - All players list with turn indicator and star counts
+  - Phase indicator with visual progress bar (SETUP -> RECRUIT -> ATTACK -> MANEUVER)
+  - Card hand preview showing card IDs
+  - Updated App.tsx with 4 mock players and territory ownership distribution
+- [x] 2. Create PhaseIndicator component (commit b0b3e2c)
+  - Created src/components/game/PhaseIndicator.tsx as standalone component
+  - Shows turn number with "YOUR TURN" / "Waiting..." indicator
+  - Visual progress bar with labeled phases: Setup, Reinforce, Attack, Move
+  - Phase circles show current (yellow), past (green check), future (gray)
+  - Displays current sub-phase with context (e.g., "PLACE TROOPS (8 remaining)")
+  - Refactored PlayerSidebar to use the new PhaseIndicator component
+  - Added subPhase and troopsRemaining props support
+- [x] 3. Build CardHand display (commit aa8b38b)
+  - Created src/data/cards.ts with all 52 resource cards:
+    - 42 territory cards (one per territory, coinValue starting at 1)
+    - 10 standalone coin cards (coinValue: 1)
+    - getTroopsForCoins() helper function matching spec section 4.2
+  - Created CardHand component (src/components/game/CardHand.tsx):
+    - Displays cards with territory names and coin values
+    - Card selection for trading (click to select/deselect)
+    - Total coins display and selected coins preview
+    - Trade for troops button with dynamic troops calculation
+    - Trade for star button (requires exactly 4 cards per spec)
+    - canTrade prop enables trading only during RECRUIT/ATTACK phases
+  - Updated PlayerSidebar to use CardHand component with trade callbacks
+- [x] 4. Add faction emblems and icons (commit 7797cfc)
+  - Created src/components/icons/FactionEmblems.tsx with unique SVG emblems:
+    - Die Mechaniker: gear/cog icon (mechanical engineering theme)
+    - Enclave of the Bear: stylized bear head silhouette
+    - Imperial Balkania: crown icon (imperial power theme)
+    - Khan Industries: factory/industrial building icon
+    - Saharan Republic: sun/desert icon
+  - Created FactionEmblem component that renders appropriate emblem by factionId
+  - Each emblem uses faction color as circular background
+  - Updated PlayerSidebar YOUR STATUS section to show faction emblem instead of letter badge
+  - Updated All Players list to show small (16px) faction emblems
+  - Created src/components/icons/index.ts for clean exports
+
+### Phase 3: Reinforcement Phase
+- [x] 1. Implement territory selection (commit 2742d62)
+  - Added selectableTerritories prop to GameBoard component
+  - During RECRUIT/PLACE_TROOPS phase, only current player's territories are selectable
+  - Non-selectable territories visually dimmed (0.5 opacity) with not-allowed cursor
+  - Selectable territories have subtle blue highlight in restricted mode
+  - Click events blocked for non-selectable territories using ref pattern
+  - App.tsx computes selectable territories based on game phase
+  - Updated mock game state to demonstrate RECRUIT phase
+- [ ] 2. Build troop deployment controls
+- [ ] 3. Add deployment validation
+- [ ] 4. Wire up to game state
+
+### Phase 4: Attack Phase
+- [ ] 1. Build attack source/target selection
+- [ ] 2. Create dice count selector
+- [ ] 3. Build CombatModal with full flow
+- [ ] 4. Add combat animations (dice roll, casualties)
+- [ ] 5. Implement conquest troop movement
+
+### Phase 5: Maneuver Phase
+- [ ] 1. Build path validation display
+- [ ] 2. Create maneuver controls
+- [ ] 3. Implement troop movement slider
+
+### Phase 6: Setup Phase
+- [ ] 1. Create FactionSelect screen
+- [ ] 2. Build PowerSelect interface
+- [ ] 3. Implement HQ placement with validation
+
+### Phase 7: Victory & Polish
+- [ ] 1. Victory detection and modal
+- [ ] 2. Game log implementation
+- [ ] 3. Sound effects
+- [ ] 4. Animations and transitions
