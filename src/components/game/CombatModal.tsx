@@ -516,22 +516,32 @@ export function CombatModal({
           {subPhase === 'TROOP_MOVE' && (
             <div className="border-t border-board-wood/50 pt-6">
               <div className="text-center mb-4">
-                <div className="font-display text-xl text-green-400 mb-2">
+                <div className="font-display text-xl text-green-400 mb-2 animate-conquest-pulse">
                   Move troops to conquered territory
                 </div>
                 <div className="text-board-parchment/70 font-body">
-                  Min: {conquestTroopRange.min} | Max: {conquestTroopRange.max}
+                  From: {attackingTerritoryData?.name} → {defendingTerritoryData?.name}
                 </div>
               </div>
 
-              {/* Troop slider */}
-              <div className="flex items-center justify-center gap-4 mb-6">
+              {/* Troop count display */}
+              <div className="text-center mb-4">
+                <span className="font-numbers text-5xl text-yellow-400">
+                  {conquestTroopsToMove || conquestTroopRange.min}
+                </span>
+                <div className="text-sm text-board-parchment/60 font-body mt-1">
+                  troops to move
+                </div>
+              </div>
+
+              {/* Range slider with +/- buttons */}
+              <div className="flex items-center justify-center gap-4 mb-4 px-8">
                 <button
                   onClick={() => onSetConquestTroops(Math.max(conquestTroopRange.min, (conquestTroopsToMove || conquestTroopRange.min) - 1))}
                   disabled={(conquestTroopsToMove || conquestTroopRange.min) <= conquestTroopRange.min}
                   className={`
-                    w-12 h-12 rounded-lg font-display text-xl font-bold
-                    transition-all duration-150
+                    w-10 h-10 rounded-lg font-display text-xl font-bold
+                    transition-all duration-150 flex-shrink-0
                     ${
                       (conquestTroopsToMove || conquestTroopRange.min) > conquestTroopRange.min
                         ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer'
@@ -542,19 +552,51 @@ export function CombatModal({
                   -
                 </button>
 
-                <div className="w-32 text-center">
-                  <span className="font-numbers text-4xl text-yellow-400">
-                    {conquestTroopsToMove || conquestTroopRange.min}
-                  </span>
-                  <div className="text-sm text-board-parchment/60 font-body">troops</div>
+                {/* Range slider */}
+                <div className="flex-1 max-w-xs">
+                  <input
+                    type="range"
+                    min={conquestTroopRange.min}
+                    max={conquestTroopRange.max}
+                    value={conquestTroopsToMove || conquestTroopRange.min}
+                    onChange={(e) => onSetConquestTroops(parseInt(e.target.value, 10))}
+                    disabled={conquestTroopRange.min === conquestTroopRange.max}
+                    className={`
+                      w-full h-3 rounded-lg appearance-none cursor-pointer
+                      bg-board-wood/50
+                      [&::-webkit-slider-thumb]:appearance-none
+                      [&::-webkit-slider-thumb]:w-6
+                      [&::-webkit-slider-thumb]:h-6
+                      [&::-webkit-slider-thumb]:rounded-full
+                      [&::-webkit-slider-thumb]:bg-yellow-400
+                      [&::-webkit-slider-thumb]:border-2
+                      [&::-webkit-slider-thumb]:border-yellow-600
+                      [&::-webkit-slider-thumb]:cursor-pointer
+                      [&::-webkit-slider-thumb]:shadow-lg
+                      [&::-webkit-slider-thumb]:transition-transform
+                      [&::-webkit-slider-thumb]:hover:scale-110
+                      [&::-moz-range-thumb]:w-6
+                      [&::-moz-range-thumb]:h-6
+                      [&::-moz-range-thumb]:rounded-full
+                      [&::-moz-range-thumb]:bg-yellow-400
+                      [&::-moz-range-thumb]:border-2
+                      [&::-moz-range-thumb]:border-yellow-600
+                      [&::-moz-range-thumb]:cursor-pointer
+                      ${conquestTroopRange.min === conquestTroopRange.max ? 'opacity-50' : ''}
+                    `}
+                  />
+                  <div className="flex justify-between text-xs text-board-parchment/50 font-body mt-1">
+                    <span>Min: {conquestTroopRange.min}</span>
+                    <span>Max: {conquestTroopRange.max}</span>
+                  </div>
                 </div>
 
                 <button
                   onClick={() => onSetConquestTroops(Math.min(conquestTroopRange.max, (conquestTroopsToMove || conquestTroopRange.min) + 1))}
                   disabled={(conquestTroopsToMove || conquestTroopRange.min) >= conquestTroopRange.max}
                   className={`
-                    w-12 h-12 rounded-lg font-display text-xl font-bold
-                    transition-all duration-150
+                    w-10 h-10 rounded-lg font-display text-xl font-bold
+                    transition-all duration-150 flex-shrink-0
                     ${
                       (conquestTroopsToMove || conquestTroopRange.min) < conquestTroopRange.max
                         ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
@@ -566,13 +608,34 @@ export function CombatModal({
                 </button>
               </div>
 
+              {/* Territory troop preview */}
+              <div className="flex justify-center gap-8 mb-6 text-sm font-body">
+                <div className="text-center">
+                  <div className="text-board-parchment/60">
+                    {attackingTerritoryData?.name}
+                  </div>
+                  <div className="font-numbers text-lg text-red-400">
+                    {(attackingTerritoryState?.troopCount || 0) - (conquestTroopsToMove || conquestTroopRange.min)} troops left
+                  </div>
+                </div>
+                <div className="text-board-parchment/30 self-center">→</div>
+                <div className="text-center">
+                  <div className="text-board-parchment/60">
+                    {defendingTerritoryData?.name}
+                  </div>
+                  <div className="font-numbers text-lg text-green-400">
+                    {conquestTroopsToMove || conquestTroopRange.min} troops
+                  </div>
+                </div>
+              </div>
+
               {/* Confirm button */}
               <div className="flex justify-center">
                 <button
                   onClick={onConfirmConquest}
                   className="px-8 py-3 rounded-lg font-display text-lg font-semibold
                     bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
-                    transition-all duration-150"
+                    transition-all duration-150 hover:scale-105"
                 >
                   Confirm Conquest
                 </button>
