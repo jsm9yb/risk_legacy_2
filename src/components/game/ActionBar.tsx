@@ -349,6 +349,10 @@ interface ManeuverControlsProps {
   maneuverTargetTerritory: TerritoryId | null;
   currentManeuverPath: TerritoryId[] | null;
   territoryStates: Record<TerritoryId, TerritoryState>;
+  maneuverTroopsToMove: number;
+  maxManeuverTroops: number;
+  onSetManeuverTroops: (troops: number) => void;
+  onConfirmManeuver: () => void;
   onCancelManeuver: () => void;
   onSkipManeuver: () => void;
   validationError?: ValidationError | null;
@@ -360,6 +364,10 @@ function ManeuverControls({
   maneuverTargetTerritory,
   currentManeuverPath,
   territoryStates,
+  maneuverTroopsToMove,
+  maxManeuverTroops,
+  onSetManeuverTroops,
+  onConfirmManeuver,
   onCancelManeuver,
   onSkipManeuver,
   validationError,
@@ -451,24 +459,27 @@ function ManeuverControls({
     );
   }
 
-  // SET_MANEUVER_TROOPS state: showing path, will be used in next task for troop slider
+  // SET_MANEUVER_TROOPS state: troop selection slider and execute button
   if (subPhase === 'SET_MANEUVER_TROOPS' && maneuverSourceTerritory && maneuverTargetTerritory) {
     const pathLength = currentManeuverPath ? currentManeuverPath.length : 0;
+    const targetTroops = maneuverTargetTerritory
+      ? territoryStates[maneuverTargetTerritory]?.troopCount || 0
+      : 0;
 
     return (
       <div className="flex items-center justify-between w-full">
+        {/* Left side: Route info */}
         <div className="flex flex-col">
-          <div className="font-display text-board-parchment text-lg">
-            <span className="text-yellow-400 font-semibold">
-              {sourceTerritoryData?.name}
-            </span>
-            <span className="mx-3 text-green-400">→</span>
-            <span className="text-green-400 font-semibold">
-              {targetTerritoryData?.name}
-            </span>
+          <div className="font-display text-board-parchment">
+            Move troops between your territories
           </div>
           <div className="text-sm text-board-parchment/70 font-body">
-            Path: {pathLength} territories (highlighted on map)
+            <span className="text-yellow-400 font-semibold">{sourceTerritoryData?.name}</span>
+            <span className="mx-2">→</span>
+            <span className="text-green-400 font-semibold">{targetTerritoryData?.name}</span>
+            <span className="ml-2 text-board-parchment/50">
+              ({pathLength} {pathLength === 1 ? 'territory' : 'territories'})
+            </span>
           </div>
           {validationError && (
             <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
@@ -477,14 +488,114 @@ function ManeuverControls({
           )}
         </div>
 
+        {/* Center: Troop slider */}
+        <div className="flex items-center gap-4 bg-board-wood/50 rounded-lg px-4 py-2">
+          <div className="text-board-parchment font-body text-sm">
+            <div className="text-center">Troops</div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Minus button */}
+            <button
+              onClick={() => onSetManeuverTroops(maneuverTroopsToMove - 1)}
+              disabled={maneuverTroopsToMove <= 1}
+              className={`
+                w-8 h-8 rounded-lg font-display text-lg font-bold
+                transition-all duration-150 flex items-center justify-center
+                ${
+                  maneuverTroopsToMove > 1
+                    ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer'
+                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                }
+              `}
+            >
+              -
+            </button>
+
+            {/* Slider and value display */}
+            <div className="flex flex-col items-center gap-1">
+              <input
+                type="range"
+                min={1}
+                max={maxManeuverTroops}
+                value={maneuverTroopsToMove}
+                onChange={(e) => onSetManeuverTroops(parseInt(e.target.value, 10))}
+                disabled={maxManeuverTroops <= 1}
+                className="w-32 h-2 bg-board-border rounded-lg appearance-none cursor-pointer
+                  [&::-webkit-slider-thumb]:appearance-none
+                  [&::-webkit-slider-thumb]:w-4
+                  [&::-webkit-slider-thumb]:h-4
+                  [&::-webkit-slider-thumb]:bg-yellow-400
+                  [&::-webkit-slider-thumb]:rounded-full
+                  [&::-webkit-slider-thumb]:cursor-pointer
+                  [&::-webkit-slider-thumb]:shadow-md
+                  [&::-moz-range-thumb]:w-4
+                  [&::-moz-range-thumb]:h-4
+                  [&::-moz-range-thumb]:bg-yellow-400
+                  [&::-moz-range-thumb]:rounded-full
+                  [&::-moz-range-thumb]:border-0
+                  [&::-moz-range-thumb]:cursor-pointer
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <div className="flex justify-between w-32 text-xs text-board-parchment/50 font-numbers">
+                <span>1</span>
+                <span>{maxManeuverTroops}</span>
+              </div>
+            </div>
+
+            {/* Current value display */}
+            <div className="w-10 text-center">
+              <span className="font-numbers text-2xl text-yellow-400">{maneuverTroopsToMove}</span>
+            </div>
+
+            {/* Plus button */}
+            <button
+              onClick={() => onSetManeuverTroops(maneuverTroopsToMove + 1)}
+              disabled={maneuverTroopsToMove >= maxManeuverTroops}
+              className={`
+                w-8 h-8 rounded-lg font-display text-lg font-bold
+                transition-all duration-150 flex items-center justify-center
+                ${
+                  maneuverTroopsToMove < maxManeuverTroops
+                    ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
+                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                }
+              `}
+            >
+              +
+            </button>
+          </div>
+
+          {/* Troop preview */}
+          <div className="text-xs text-board-parchment/60 font-body ml-2 border-l border-board-parchment/20 pl-3">
+            <div>
+              <span className="text-yellow-400">{sourceTerritoryData?.name?.split(' ')[0]}</span>
+              <span className="text-red-400 ml-1">{sourceTroops - maneuverTroopsToMove}</span>
+            </div>
+            <div>
+              <span className="text-green-400">{targetTerritoryData?.name?.split(' ')[0]}</span>
+              <span className="text-green-400 ml-1">{targetTroops + maneuverTroopsToMove}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right side: Action buttons */}
         <div className="flex gap-3">
           <button
             onClick={onCancelManeuver}
-            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+            className="px-4 py-2 rounded-lg font-display text-sm font-semibold
               bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
               transition-all duration-150"
           >
             Cancel
+          </button>
+          <button
+            onClick={onConfirmManeuver}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
+              transition-all duration-150 hover:scale-105"
+          >
+            Execute Maneuver
           </button>
         </div>
       </div>
@@ -522,6 +633,10 @@ interface ActionBarProps {
   maneuverSourceTerritory?: TerritoryId | null;
   maneuverTargetTerritory?: TerritoryId | null;
   currentManeuverPath?: TerritoryId[] | null;
+  maneuverTroopsToMove?: number;
+  maxManeuverTroops?: number;
+  onSetManeuverTroops?: (troops: number) => void;
+  onConfirmManeuver?: () => void;
   onCancelManeuver?: () => void;
   onSkipManeuver?: () => void;
   validationError?: ValidationError | null;
@@ -546,6 +661,10 @@ export function ActionBar({
   maneuverSourceTerritory,
   maneuverTargetTerritory,
   currentManeuverPath,
+  maneuverTroopsToMove,
+  maxManeuverTroops,
+  onSetManeuverTroops,
+  onConfirmManeuver,
   onCancelManeuver,
   onSkipManeuver,
   validationError,
@@ -591,6 +710,10 @@ export function ActionBar({
           maneuverTargetTerritory={maneuverTargetTerritory || null}
           currentManeuverPath={currentManeuverPath || null}
           territoryStates={territoryStates}
+          maneuverTroopsToMove={maneuverTroopsToMove || 1}
+          maxManeuverTroops={maxManeuverTroops || 1}
+          onSetManeuverTroops={onSetManeuverTroops || (() => {})}
+          onConfirmManeuver={onConfirmManeuver || (() => {})}
           onCancelManeuver={onCancelManeuver || (() => {})}
           onSkipManeuver={onSkipManeuver || (() => {})}
           validationError={validationError}

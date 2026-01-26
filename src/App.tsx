@@ -137,11 +137,15 @@ function App() {
     maneuverSourceTerritory,
     maneuverTargetTerritory,
     currentManeuverPath,
+    maneuverTroopsToMove,
     selectManeuverSource,
     selectManeuverTarget,
+    setManeuverTroops,
+    confirmManeuver,
     cancelManeuver,
     skipManeuver,
     getValidManeuverTargets,
+    getMaxManeuverTroops,
     getTroopsRemaining,
     getSelectableTerritories,
     getValidAttackTargets,
@@ -209,6 +213,9 @@ function App() {
 
   // Get conquest troop range
   const conquestTroopRange = getConquestTroopRange();
+
+  // Get max maneuver troops
+  const maxManeuverTroops = getMaxManeuverTroops();
 
   // Determine if combat modal should be open
   const isCombatModalOpen =
@@ -394,6 +401,10 @@ function App() {
         maneuverSourceTerritory={maneuverSourceTerritory}
         maneuverTargetTerritory={maneuverTargetTerritory}
         currentManeuverPath={currentManeuverPath}
+        maneuverTroopsToMove={maneuverTroopsToMove || 1}
+        maxManeuverTroops={maxManeuverTroops}
+        onSetManeuverTroops={setManeuverTroops}
+        onConfirmManeuver={confirmManeuver}
         onCancelManeuver={cancelManeuver}
         onSkipManeuver={skipManeuver}
         validationError={displayError}
