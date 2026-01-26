@@ -4,6 +4,7 @@ import { factionsById } from '@/data/factions';
 import { continents } from '@/data/continents';
 import { TerritoryState, TerritoryId } from '@/types/territory';
 import { PhaseIndicator } from './PhaseIndicator';
+import { CardHand } from './CardHand';
 
 interface PlayerSidebarProps {
   currentPlayer: Player;
@@ -14,6 +15,8 @@ interface PlayerSidebarProps {
   subPhase: SubPhase;
   territories: Record<TerritoryId, TerritoryState>;
   troopsRemaining?: number;
+  onTradeForTroops?: (cardIds: number[]) => void;
+  onTradeForStar?: (cardIds: number[]) => void;
 }
 
 // Calculate reinforcement preview for a player
@@ -98,6 +101,8 @@ export function PlayerSidebar({
   subPhase,
   territories,
   troopsRemaining,
+  onTradeForTroops,
+  onTradeForStar,
 }: PlayerSidebarProps) {
   const faction = factionsById[currentPlayer.factionId];
   const power = faction?.powers.find((p) => p.id === currentPlayer.activePower);
@@ -229,36 +234,14 @@ export function PlayerSidebar({
         />
       </div>
 
-      {/* Card Hand Preview */}
+      {/* Card Hand */}
       <div className="p-4">
-        <h2 className="text-xs uppercase tracking-wider text-board-parchment/60 mb-2 font-body">
-          Your Cards ({currentPlayer.cards.length})
-        </h2>
-        <div className="flex gap-1 flex-wrap">
-          {currentPlayer.cards.length === 0 ? (
-            <span className="text-sm text-board-parchment/50 font-body italic">
-              No cards
-            </span>
-          ) : (
-            currentPlayer.cards.slice(0, 6).map((cardId, i) => (
-              <div
-                key={i}
-                className="w-8 h-10 bg-board-parchment rounded border border-board-wood flex items-center justify-center"
-              >
-                <span className="text-xs font-numbers text-board-wood">
-                  {cardId}
-                </span>
-              </div>
-            ))
-          )}
-          {currentPlayer.cards.length > 6 && (
-            <div className="w-8 h-10 bg-board-wood/50 rounded border border-board-wood flex items-center justify-center">
-              <span className="text-xs font-body text-board-parchment">
-                +{currentPlayer.cards.length - 6}
-              </span>
-            </div>
-          )}
-        </div>
+        <CardHand
+          cardIds={currentPlayer.cards}
+          onTradeForTroops={onTradeForTroops}
+          onTradeForStar={onTradeForStar}
+          canTrade={activePlayerId === currentPlayer.id && (phase === 'RECRUIT' || phase === 'ATTACK')}
+        />
       </div>
     </aside>
   );
