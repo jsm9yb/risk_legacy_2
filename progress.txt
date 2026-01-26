@@ -387,4 +387,23 @@
     - SoundSettings component with toggle and volume slider
     - SoundToggle compact button component
   - Integrated SoundToggle into App header
-- [ ] 4. Animations and transitions
+- [x] 4. Animations and transitions
+  - Extended tailwind.config.ts with new keyframes:
+    - territoryPulse: Selection glow effect
+    - troopDeploy: Pop-in animation for troops
+    - victoryBounce: Trophy bounce animation
+    - starSparkle: Star rotation effect
+    - phaseSlide: Phase transition slide
+    - buttonPress: Click feedback
+    - shake: Error feedback
+    - glowPulse: Highlight glow
+    - slideUp, fadeIn, scaleIn: Modal/card animations
+  - Added animation utility classes to index.css:
+    - stagger-children: Sequential animation delays
+    - hover-lift: Hover elevation effect
+    - active-press: Click feedback
+    - selection-ring: Pulsing selection indicator
+    - territory-glow: Territory highlight
+    - animate-error: Error shake
+    - Scrollbar styling for game log
+    - Reduced motion support for accessibility

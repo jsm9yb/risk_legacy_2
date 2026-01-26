@@ -70,6 +70,70 @@ export default {
         fadeInUp: {
           '0%': { transform: 'translateY(10px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' }
+        },
+        // Territory selection glow pulse
+        territoryPulse: {
+          '0%, 100%': { filter: 'brightness(1) drop-shadow(0 0 0 transparent)' },
+          '50%': { filter: 'brightness(1.2) drop-shadow(0 0 8px rgba(250, 204, 21, 0.5))' }
+        },
+        // Troop deployment pop
+        troopDeploy: {
+          '0%': { transform: 'scale(0) translateY(-20px)', opacity: '0' },
+          '60%': { transform: 'scale(1.2) translateY(0)', opacity: '1' },
+          '100%': { transform: 'scale(1) translateY(0)', opacity: '1' }
+        },
+        // Victory trophy bounce
+        victoryBounce: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '25%': { transform: 'translateY(-15px)' },
+          '50%': { transform: 'translateY(0)' },
+          '75%': { transform: 'translateY(-8px)' }
+        },
+        // Star sparkle
+        starSparkle: {
+          '0%, 100%': { transform: 'scale(1) rotate(0deg)', opacity: '1' },
+          '50%': { transform: 'scale(1.2) rotate(180deg)', opacity: '0.8' }
+        },
+        // Phase slide transition
+        phaseSlide: {
+          '0%': { transform: 'translateX(-100%)', opacity: '0' },
+          '100%': { transform: 'translateX(0)', opacity: '1' }
+        },
+        // Button press
+        buttonPress: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(0.95)' }
+        },
+        // Shake for errors
+        shake: {
+          '0%, 100%': { transform: 'translateX(0)' },
+          '10%, 30%, 50%, 70%, 90%': { transform: 'translateX(-4px)' },
+          '20%, 40%, 60%, 80%': { transform: 'translateX(4px)' }
+        },
+        // Glow pulse for highlights
+        glowPulse: {
+          '0%, 100%': { boxShadow: '0 0 5px rgba(250, 204, 21, 0.3)' },
+          '50%': { boxShadow: '0 0 20px rgba(250, 204, 21, 0.6)' }
+        },
+        // Spin for loading
+        spin: {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' }
+        },
+        // Slide up for modals
+        slideUp: {
+          '0%': { transform: 'translateY(100px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' }
+        },
+        // Fade in
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' }
+        },
+        // Scale in for cards
+        scaleIn: {
+          '0%': { transform: 'scale(0.8)', opacity: '0' },
+          '100%': { transform: 'scale(1)', opacity: '1' }
         }
       },
       animation: {
@@ -79,7 +143,19 @@ export default {
         'modifier-slide': 'modifierSlideIn 0.3s ease-out forwards',
         'casualty-pop': 'casualtyPop 0.4s ease-out forwards',
         'conquest-pulse': 'conquestPulse 1s ease-in-out infinite',
-        'fade-in-up': 'fadeInUp 0.3s ease-out forwards'
+        'fade-in-up': 'fadeInUp 0.3s ease-out forwards',
+        'territory-pulse': 'territoryPulse 2s ease-in-out infinite',
+        'troop-deploy': 'troopDeploy 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        'victory-bounce': 'victoryBounce 1s ease-in-out infinite',
+        'star-sparkle': 'starSparkle 2s ease-in-out infinite',
+        'phase-slide': 'phaseSlide 0.3s ease-out forwards',
+        'button-press': 'buttonPress 0.1s ease-in-out',
+        'shake': 'shake 0.5s ease-in-out',
+        'glow-pulse': 'glowPulse 2s ease-in-out infinite',
+        'spin': 'spin 1s linear infinite',
+        'slide-up': 'slideUp 0.3s ease-out forwards',
+        'fade-in': 'fadeIn 0.3s ease-out forwards',
+        'scale-in': 'scaleIn 0.2s ease-out forwards'
       }
     },
   },
