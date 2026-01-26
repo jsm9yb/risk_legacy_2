@@ -153,7 +153,25 @@
     - handleTerritoryClick routes to attack selection during ATTACK phase
     - highlightedTerritories shows valid attack targets during SELECT_ATTACK
     - Wired up cancelAttack and endAttackPhase callbacks to ActionBar
-- [ ] 2. Create dice count selector
+- [x] 2. Create dice count selector (commit b7f42a5)
+  - Added dice validation functions to src/utils/attackValidation.ts:
+    - getMaxAttackerDice(): Calculate max dice per spec (min(troopCount - 1, 3))
+    - getAvailableAttackerDice(): Get array of valid dice options [1], [1,2], or [1,2,3]
+    - validateSelectAttackerDice(): Validates dice count against troop limits
+  - Updated gameStore.ts with dice selection state and actions:
+    - Added attackerDiceCount state field
+    - selectAttackerDice(): Validates and transitions to DEFENDER_DICE sub-phase
+    - getMaxAttackerDice() and getAvailableAttackerDice() selectors
+    - Reset attackerDiceCount in cancelAttack() and endAttackPhase()
+  - Updated AttackControls in ActionBar.tsx with dice selector UI:
+    - ATTACKER_DICE state shows 3 dice buttons (1, 2, 3)
+    - Unavailable dice counts are disabled (grayed out, not clickable)
+    - Shows max dice based on attacking territory's troop count
+    - Each button styled with red background, hover effects
+  - Wired up in App.tsx:
+    - Added availableDice computed from store
+    - handleSelectDice callback calls selectAttackerDice
+    - Passed availableDice and onSelectDice to ActionBar
 - [ ] 3. Build CombatModal with full flow
 - [ ] 4. Add combat animations (dice roll, casualties)
 - [ ] 5. Implement conquest troop movement
