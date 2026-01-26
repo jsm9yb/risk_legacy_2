@@ -203,7 +203,25 @@
   - Updated App.tsx to integrate CombatModal:
     - Modal opens when subPhase is DEFENDER_DICE, RESOLVE, or TROOP_MOVE
     - All combat action handlers wired up (dice selection, resolve, conquest)
-- [ ] 4. Add combat animations (dice roll, casualties)
+- [x] 4. Add combat animations (dice roll, casualties) (commit bfd88d3)
+  - Added custom Tailwind keyframes to tailwind.config.ts:
+    - diceAppear: Scale and rotate bounce for dice appearing
+    - diceRoll: 3D rotation effect while dice are rolling
+    - diceSettle: Scale bounce when dice settle to final value
+    - modifierSlideIn: Smooth slide-down for modifier labels
+    - casualtyPop: Emphasized pop animation for casualty counts
+    - conquestPulse: Glowing pulse for conquest notification
+    - fadeInUp: Smooth fade-in for results section
+  - Updated CombatModal.tsx with animation phases:
+    - AnimationPhase type: idle -> rolling -> settling -> showing-modifiers -> showing-results -> complete
+    - DieDisplay shows random rolling values during roll phase with 50ms interval
+    - Staggered animations based on die index for visual interest
+    - Animation timeline: 0ms idle, 100ms rolling, 600ms settling, 1000ms modifiers, 1400ms results
+    - Modifiers appear only after dice settle
+  - Created CasualtyDisplay component with casualty-pop animation
+  - Conquest notification pulses with text-shadow glow effect
+  - Continue button has hover scale effect
+  - All animations use Tailwind CSS (no external animation library)
 - [ ] 5. Implement conquest troop movement
 
 ### Phase 5: Maneuver Phase
