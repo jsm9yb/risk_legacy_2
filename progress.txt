@@ -282,7 +282,14 @@
     - Added maneuverTroopsToMove and getMaxManeuverTroops from store
     - Added setManeuverTroops and confirmManeuver handlers
     - Passed all new props to ActionBar component
-- [ ] 3. Implement troop movement slider
+- [x] 3. Implement troop movement slider (completed in Task 2 - commit 4130b76)
+  - Troop movement slider already implemented in ManeuverControls component
+  - Range slider with min=1, max=maxManeuverTroops (territory troops - 1)
+  - Custom yellow thumb styling matching game theme
+  - +/- buttons for fine-grained control
+  - Live preview showing source/target troop counts after move
+  - Slider disabled when only 1 troop can be moved
+  - All wiring complete in App.tsx and gameStore.ts
 
 ### Phase 6: Setup Phase
 - [ ] 1. Create FactionSelect screen
