@@ -355,6 +355,23 @@
     - confirmConquest() marks players as eliminated when they lose all territories
     - Victory check runs after conquest
   - Integrated VictoryModal into App.tsx
-- [ ] 2. Game log implementation
+- [x] 2. Game log implementation
+  - Created src/types/gameLog.ts with log entry types:
+    - LogEntryType enum: DEPLOY, ATTACK_DECLARE, COMBAT_RESULT, CONQUEST, etc.
+    - GameLogEntry base interface with id, type, timestamp, turn, message
+    - Specialized entry interfaces for each event type
+    - createLogEntryId() helper
+  - Created src/components/game/GameLog.tsx:
+    - Collapsible log panel (bottom-right positioning)
+    - Turn-grouped entries with separators
+    - Filter buttons (All, Combat, Conquests, Deploy)
+    - Auto-scroll to latest entries
+    - Entry icons and colors by type
+    - Entry count footer
+  - Updated gameStore.ts:
+    - Added gameLog: GameLogEntry[] to state
+    - addLogEntry(): Adds timestamped entry with current turn
+    - clearLog(): Clears all entries
+  - Integrated GameLog into App.tsx (shown during 'active' status)
 - [ ] 3. Sound effects
 - [ ] 4. Animations and transitions

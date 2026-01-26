@@ -7,6 +7,7 @@ import { CombatModal } from './components/game/CombatModal';
 import { FactionSelect } from './components/setup/FactionSelect';
 import { HQPlacement } from './components/setup/HQPlacement';
 import { VictoryModal } from './components/game/VictoryModal';
+import { GameLog } from './components/game/GameLog';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
@@ -173,6 +174,7 @@ function App() {
     getWinner,
     dismissVictory,
     status,
+    gameLog,
   } = useGameStore();
 
   // Local state for tooltip position (UI-only, doesn't need to be in store)
@@ -180,6 +182,9 @@ function App() {
 
   // Local state for validation error display with auto-clear
   const [displayError, setDisplayError] = useState<ValidationError | null>(null);
+
+  // Local state for game log collapse
+  const [isLogCollapsed, setIsLogCollapsed] = useState(false);
 
   // Initialize store with mock data on mount
   useEffect(() => {
@@ -505,6 +510,16 @@ function App() {
         <TerritoryTooltip
           territory={territoryStates[hoveredTerritory]}
           position={tooltipPosition}
+        />
+      )}
+
+      {/* Game Log */}
+      {status === 'active' && (
+        <GameLog
+          entries={gameLog}
+          currentTurn={currentTurn}
+          isCollapsed={isLogCollapsed}
+          onToggleCollapse={() => setIsLogCollapsed(!isLogCollapsed)}
         />
       )}
 

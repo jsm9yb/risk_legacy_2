@@ -50,6 +50,7 @@ import {
   checkVictory,
   VictoryResult,
 } from '@/utils/victoryDetection';
+import { GameLogEntry, createLogEntryId } from '@/types/gameLog';
 
 /**
  * Deployment history entry for tracking troop placements
@@ -108,6 +109,9 @@ export interface GameStoreState {
   // Victory state
   victoryResult: VictoryResult | null;
   winnerId: string | null;
+
+  // Game log state
+  gameLog: GameLogEntry[];
 
   // UI state
   selectedTerritory: TerritoryId | null;
@@ -189,6 +193,10 @@ export interface GameStoreActions {
   getWinner: () => Player | null;
   dismissVictory: () => void;
 
+  // Game log actions
+  addLogEntry: (entry: Omit<GameLogEntry, 'id' | 'timestamp' | 'turn'>) => void;
+  clearLog: () => void;
+
   // Error handling
   clearError: () => void;
 }
@@ -226,6 +234,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setupTurnIndex: 0,
   victoryResult: null,
   winnerId: null,
+  gameLog: [],
   selectedTerritory: null,
   hoveredTerritory: null,
   lastError: null,
@@ -1475,5 +1484,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // In a full implementation, this would transition to write phase
     // For now, just keep the victory state for display
     console.log('Victory acknowledged. Transitioning to Write Phase...');
+  },
+
+  // Add a new entry to the game log
+  addLogEntry: (entry) => {
+    const state = get();
+    const newEntry: GameLogEntry = {
+      ...entry,
+      id: createLogEntryId(),
+      timestamp: Date.now(),
+      turn: state.currentTurn,
+    };
+    set((prev) => ({
+      gameLog: [...prev.gameLog, newEntry],
+    }));
+  },
+
+  // Clear the game log
+  clearLog: () => {
+    set({ gameLog: [] });
   },
 }));
