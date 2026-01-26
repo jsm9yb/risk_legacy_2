@@ -10,6 +10,7 @@ interface GameBoardProps {
   selectedTerritory?: TerritoryId | null;
   highlightedTerritories?: TerritoryId[];
   selectableTerritories?: TerritoryId[];
+  pendingDeployments?: Record<TerritoryId, number>;
 }
 
 // Calculate center point for a territory path (for placing troop badges)
@@ -28,6 +29,7 @@ export function GameBoard({
   selectedTerritory,
   highlightedTerritories = [],
   selectableTerritories,
+  pendingDeployments = {},
 }: GameBoardProps) {
   const svgContainerRef = useRef<HTMLDivElement>(null);
   const [svgContent, setSvgContent] = useState<string>('');
@@ -169,14 +171,17 @@ export function GameBoard({
             const state = territoryStates[territory.id];
             if (!center || !state) return null;
 
+            const pending = pendingDeployments[territory.id] || 0;
+            const hasPending = pending > 0;
+
             return (
               <g key={territory.id} transform={`translate(${center.x}, ${center.y})`}>
                 {/* Troop count badge background */}
                 <circle
                   r="12"
-                  fill="#2C1810"
-                  stroke="#F5E6D3"
-                  strokeWidth="1.5"
+                  fill={hasPending ? '#166534' : '#2C1810'}
+                  stroke={hasPending ? '#22c55e' : '#F5E6D3'}
+                  strokeWidth={hasPending ? '2' : '1.5'}
                 />
                 {/* Troop count text */}
                 <text
@@ -189,6 +194,22 @@ export function GameBoard({
                 >
                   {state.troopCount}
                 </text>
+                {/* Pending deployment indicator */}
+                {hasPending && (
+                  <g transform="translate(10, -10)">
+                    <circle r="8" fill="#22c55e" />
+                    <text
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill="#fff"
+                      fontSize="8"
+                      fontFamily="Oswald, sans-serif"
+                      fontWeight="bold"
+                    >
+                      +{pending}
+                    </text>
+                  </g>
+                )}
               </g>
             );
           })}

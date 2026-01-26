@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { GameBoard } from './components/game/GameBoard';
 import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
+import { ActionBar } from './components/game/ActionBar';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
@@ -99,12 +100,15 @@ function createPlaceholderTerritoryStates(): Record<TerritoryId, TerritoryState>
 }
 
 function App() {
-  const [territoryStates] = useState<Record<TerritoryId, TerritoryState>>(
+  const [territoryStates, setTerritoryStates] = useState<Record<TerritoryId, TerritoryState>>(
     createPlaceholderTerritoryStates
   );
   const [selectedTerritory, setSelectedTerritory] = useState<TerritoryId | null>(null);
   const [hoveredTerritory, setHoveredTerritory] = useState<TerritoryId | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Pending deployments: tracks troops staged for placement but not yet confirmed
+  const [pendingDeployments, setPendingDeployments] = useState<Record<TerritoryId, number>>({});
 
   // Mock game state
   const currentPlayer = mockPlayers[0];
@@ -112,7 +116,11 @@ function App() {
   const currentTurn = 5;
   const phase: GamePhase = 'RECRUIT';
   const subPhase: SubPhase = 'PLACE_TROOPS';
-  const troopsRemaining = 8;
+  const initialTroops = 8;
+
+  // Calculate remaining troops (initial minus pending)
+  const totalPendingTroops = Object.values(pendingDeployments).reduce((sum, count) => sum + count, 0);
+  const troopsRemaining = initialTroops - totalPendingTroops;
 
   const handleTerritoryClick = (territoryId: TerritoryId) => {
     setSelectedTerritory((prev) => (prev === territoryId ? null : territoryId));
@@ -124,6 +132,61 @@ function App() {
       setTooltipPosition(mousePosition);
     }
   };
+
+  // Add a troop to the selected territory's pending deployments
+  const handleAddTroop = useCallback((territoryId: TerritoryId) => {
+    if (troopsRemaining <= 0) return;
+
+    setPendingDeployments((prev) => ({
+      ...prev,
+      [territoryId]: (prev[territoryId] || 0) + 1,
+    }));
+  }, [troopsRemaining]);
+
+  // Remove a troop from the selected territory's pending deployments
+  const handleRemoveTroop = useCallback((territoryId: TerritoryId) => {
+    setPendingDeployments((prev) => {
+      const current = prev[territoryId] || 0;
+      if (current <= 0) return prev;
+
+      const newCount = current - 1;
+      if (newCount === 0) {
+        // Remove the key entirely if count is 0
+        const { [territoryId]: _, ...rest } = prev;
+        return rest;
+      }
+
+      return {
+        ...prev,
+        [territoryId]: newCount,
+      };
+    });
+  }, []);
+
+  // Confirm deployment: apply pending deployments to territory states
+  const handleConfirmDeployment = useCallback(() => {
+    if (troopsRemaining > 0) return; // Can only confirm when all troops are placed
+
+    setTerritoryStates((prev) => {
+      const updated = { ...prev };
+      Object.entries(pendingDeployments).forEach(([territoryId, count]) => {
+        if (updated[territoryId as TerritoryId]) {
+          updated[territoryId as TerritoryId] = {
+            ...updated[territoryId as TerritoryId],
+            troopCount: updated[territoryId as TerritoryId].troopCount + count,
+          };
+        }
+      });
+      return updated;
+    });
+
+    // Clear pending deployments after confirming
+    setPendingDeployments({});
+
+    // In a real implementation, this would transition to the next phase
+    // For now, we just clear the deployments
+    console.log('Deployment confirmed! Transitioning to ATTACK phase...');
+  }, [troopsRemaining, pendingDeployments]);
 
   // Get neighbors of selected territory for highlighting
   const highlightedTerritories = selectedTerritory
@@ -186,26 +249,24 @@ function App() {
               selectedTerritory={selectedTerritory}
               highlightedTerritories={highlightedTerritories}
               selectableTerritories={selectableTerritories}
+              pendingDeployments={pendingDeployments}
             />
           </div>
         </main>
       </div>
 
-      {/* Footer with selected territory info */}
-      {selectedTerritory && (
-        <footer className="h-20 bg-board-border p-4 border-t-2 border-board-wood">
-          <div className="text-board-parchment font-body">
-            <span className="font-bold">Selected: </span>
-            {territories.find((t) => t.id === selectedTerritory)?.name}
-            <span className="ml-4">
-              Troops: {territoryStates[selectedTerritory]?.troopCount}
-            </span>
-            <span className="ml-4">
-              Neighbors: {highlightedTerritories.length}
-            </span>
-          </div>
-        </footer>
-      )}
+      {/* Action Bar - context-sensitive controls based on phase */}
+      <ActionBar
+        phase={phase}
+        subPhase={subPhase}
+        troopsRemaining={troopsRemaining}
+        selectedTerritory={selectedTerritory}
+        territoryStates={territoryStates}
+        pendingDeployments={pendingDeployments}
+        onAddTroop={handleAddTroop}
+        onRemoveTroop={handleRemoveTroop}
+        onConfirmDeployment={handleConfirmDeployment}
+      />
 
       {/* Territory Tooltip */}
       {hoveredTerritory && territoryStates[hoveredTerritory] && (
