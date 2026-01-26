@@ -107,7 +107,27 @@
   - Errors auto-clear after 3 seconds
   - App.tsx handlers now use validation functions before modifying state
   - All deployment actions (add, remove, confirm) are validated
-- [ ] 4. Wire up to game state
+- [x] 4. Wire up to game state (commit a1bcfca)
+  - Created src/store/gameStore.ts with Zustand state management
+  - Implemented GameStoreState interface with all reinforcement phase state:
+    - gameId, status, currentTurn, activePlayerId, phase, subPhase
+    - territories, players, troopsToPlace, pendingDeployments
+    - selectedTerritory, hoveredTerritory, lastError
+  - Added store actions:
+    - syncFromServer(): Initialize or update state from server
+    - addTroop(): Add troop to pending deployments with validation
+    - removeTroop(): Remove troop from pending deployments with validation
+    - confirmDeployment(): Apply pending deployments and transition to ATTACK phase
+  - Added selectors:
+    - getCurrentPlayer(): Get current player (first player in list)
+    - isMyTurn(): Check if current player is active
+    - getPlayerTerritories(): Get territories owned by a player
+    - getTroopsRemaining(): Calculate troops left to place
+    - getSelectableTerritories(): Get valid territories for current phase
+  - Replaced useState hooks in App.tsx with useGameStore hook
+  - Store handles phase transition from RECRUIT/PLACE_TROOPS to ATTACK/IDLE on confirm
+  - Validation integrated into store actions via existing validation utilities
+  - Error state managed in store with auto-clear timeout in App.tsx
 
 ### Phase 4: Attack Phase
 - [ ] 1. Build attack source/target selection
