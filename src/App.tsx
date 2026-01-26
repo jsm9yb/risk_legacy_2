@@ -134,6 +134,14 @@ function App() {
     confirmConquest,
     cancelAttack,
     endAttackPhase,
+    maneuverSourceTerritory,
+    maneuverTargetTerritory,
+    currentManeuverPath,
+    selectManeuverSource,
+    selectManeuverTarget,
+    cancelManeuver,
+    skipManeuver,
+    getValidManeuverTargets,
     getTroopsRemaining,
     getSelectableTerritories,
     getValidAttackTargets,
@@ -224,9 +232,23 @@ function App() {
       }
     }
 
+    // During maneuver phase, handle source/target selection
+    if (phase === 'MANEUVER') {
+      if (subPhase === 'SELECT_MANEUVER_SOURCE' || subPhase === null) {
+        // Select maneuver source
+        selectManeuverSource(territoryId);
+        return;
+      }
+      if (subPhase === 'SELECT_MANEUVER_TARGET') {
+        // Select maneuver target
+        selectManeuverTarget(territoryId);
+        return;
+      }
+    }
+
     // Default behavior: toggle selection
     setSelectedTerritory(selectedTerritory === territoryId ? null : territoryId);
-  }, [phase, subPhase, selectedTerritory, setSelectedTerritory, selectAttackSource, selectAttackTarget]);
+  }, [phase, subPhase, selectedTerritory, setSelectedTerritory, selectAttackSource, selectAttackTarget, selectManeuverSource, selectManeuverTarget]);
 
   const handleTerritoryHover = useCallback((territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => {
     setHoveredTerritory(territoryId);
@@ -279,6 +301,14 @@ function App() {
     // During attack phase SELECT_ATTACK, highlight valid attack targets
     if (phase === 'ATTACK' && subPhase === 'SELECT_ATTACK' && attackingTerritory) {
       return getValidAttackTargets();
+    }
+    // During maneuver phase SELECT_MANEUVER_TARGET, highlight valid maneuver targets
+    if (phase === 'MANEUVER' && subPhase === 'SELECT_MANEUVER_TARGET' && maneuverSourceTerritory) {
+      return getValidManeuverTargets();
+    }
+    // During maneuver phase SET_MANEUVER_TROOPS, highlight the path
+    if (phase === 'MANEUVER' && subPhase === 'SET_MANEUVER_TROOPS' && currentManeuverPath) {
+      return currentManeuverPath;
     }
     // Default: show neighbors of selected territory
     return selectedTerritory
@@ -361,6 +391,11 @@ function App() {
         onSelectDice={handleSelectDice}
         onCancelAttack={cancelAttack}
         onEndAttackPhase={endAttackPhase}
+        maneuverSourceTerritory={maneuverSourceTerritory}
+        maneuverTargetTerritory={maneuverTargetTerritory}
+        currentManeuverPath={currentManeuverPath}
+        onCancelManeuver={cancelManeuver}
+        onSkipManeuver={skipManeuver}
         validationError={displayError}
       />
 

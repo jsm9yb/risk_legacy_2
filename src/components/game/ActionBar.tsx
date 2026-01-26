@@ -343,6 +343,164 @@ function ReinforcementControls({
   );
 }
 
+interface ManeuverControlsProps {
+  subPhase: SubPhase;
+  maneuverSourceTerritory: TerritoryId | null;
+  maneuverTargetTerritory: TerritoryId | null;
+  currentManeuverPath: TerritoryId[] | null;
+  territoryStates: Record<TerritoryId, TerritoryState>;
+  onCancelManeuver: () => void;
+  onSkipManeuver: () => void;
+  validationError?: ValidationError | null;
+}
+
+function ManeuverControls({
+  subPhase,
+  maneuverSourceTerritory,
+  maneuverTargetTerritory,
+  currentManeuverPath,
+  territoryStates,
+  onCancelManeuver,
+  onSkipManeuver,
+  validationError,
+}: ManeuverControlsProps) {
+  const sourceTerritoryData = maneuverSourceTerritory
+    ? territoriesById[maneuverSourceTerritory]
+    : null;
+
+  const targetTerritoryData = maneuverTargetTerritory
+    ? territoriesById[maneuverTargetTerritory]
+    : null;
+
+  const sourceTroops = maneuverSourceTerritory
+    ? territoryStates[maneuverSourceTerritory]?.troopCount || 0
+    : 0;
+
+  // SELECT_MANEUVER_SOURCE state: waiting to select maneuver source
+  if (subPhase === 'SELECT_MANEUVER_SOURCE' || subPhase === null) {
+    return (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex flex-col">
+          <div className="font-display text-board-parchment">
+            Select a territory to move troops from
+          </div>
+          <div className="text-sm text-board-parchment/70 font-body">
+            Choose a territory with at least 2 troops (must leave 1 behind)
+          </div>
+          {validationError && (
+            <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
+              {validationError.message}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onSkipManeuver}
+          className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+            bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
+            transition-all duration-150"
+        >
+          Skip Maneuver
+        </button>
+      </div>
+    );
+  }
+
+  // SELECT_MANEUVER_TARGET state: selecting destination territory
+  if (subPhase === 'SELECT_MANEUVER_TARGET' && maneuverSourceTerritory) {
+    return (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex flex-col">
+          <div className="font-display text-board-parchment">
+            <span className="text-lg">Moving from: </span>
+            <span className="text-yellow-400 font-semibold">
+              {sourceTerritoryData?.name}
+            </span>
+            <span className="font-numbers text-board-parchment/70 ml-2">
+              ({sourceTroops} troops)
+            </span>
+          </div>
+          <div className="text-sm text-board-parchment/70 font-body">
+            Select a destination territory (highlighted in green)
+          </div>
+          {validationError && (
+            <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
+              {validationError.message}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancelManeuver}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
+              transition-all duration-150"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSkipManeuver}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
+              transition-all duration-150"
+          >
+            Skip Maneuver
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // SET_MANEUVER_TROOPS state: showing path, will be used in next task for troop slider
+  if (subPhase === 'SET_MANEUVER_TROOPS' && maneuverSourceTerritory && maneuverTargetTerritory) {
+    const pathLength = currentManeuverPath ? currentManeuverPath.length : 0;
+
+    return (
+      <div className="flex items-center justify-between w-full">
+        <div className="flex flex-col">
+          <div className="font-display text-board-parchment text-lg">
+            <span className="text-yellow-400 font-semibold">
+              {sourceTerritoryData?.name}
+            </span>
+            <span className="mx-3 text-green-400">→</span>
+            <span className="text-green-400 font-semibold">
+              {targetTerritoryData?.name}
+            </span>
+          </div>
+          <div className="text-sm text-board-parchment/70 font-body">
+            Path: {pathLength} territories (highlighted on map)
+          </div>
+          {validationError && (
+            <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
+              {validationError.message}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onCancelManeuver}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
+              transition-all duration-150"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback
+  return (
+    <div className="flex items-center justify-between w-full">
+      <div className="font-display text-board-parchment">
+        Maneuver phase...
+      </div>
+    </div>
+  );
+}
+
 interface ActionBarProps {
   phase: GamePhase;
   subPhase: SubPhase;
@@ -360,6 +518,12 @@ interface ActionBarProps {
   onSelectDice?: (diceCount: number) => void;
   onCancelAttack?: () => void;
   onEndAttackPhase?: () => void;
+  // Maneuver phase props
+  maneuverSourceTerritory?: TerritoryId | null;
+  maneuverTargetTerritory?: TerritoryId | null;
+  currentManeuverPath?: TerritoryId[] | null;
+  onCancelManeuver?: () => void;
+  onSkipManeuver?: () => void;
   validationError?: ValidationError | null;
 }
 
@@ -379,6 +543,11 @@ export function ActionBar({
   onSelectDice,
   onCancelAttack,
   onEndAttackPhase,
+  maneuverSourceTerritory,
+  maneuverTargetTerritory,
+  currentManeuverPath,
+  onCancelManeuver,
+  onSkipManeuver,
   validationError,
 }: ActionBarProps) {
   // Only show ActionBar during active game phases
@@ -416,27 +585,16 @@ export function ActionBar({
       )}
 
       {phase === 'MANEUVER' && (
-        <div className="flex items-center justify-between w-full">
-          <div className="font-display text-board-parchment">
-            Move troops between your territories
-          </div>
-          <div className="flex gap-3">
-            <button
-              className="px-6 py-2 rounded-lg font-display text-lg font-semibold
-                bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
-                transition-all duration-150"
-            >
-              Skip
-            </button>
-            <button
-              className="px-6 py-2 rounded-lg font-display text-lg font-semibold
-                bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
-                transition-all duration-150"
-            >
-              Execute Maneuver
-            </button>
-          </div>
-        </div>
+        <ManeuverControls
+          subPhase={subPhase}
+          maneuverSourceTerritory={maneuverSourceTerritory || null}
+          maneuverTargetTerritory={maneuverTargetTerritory || null}
+          currentManeuverPath={currentManeuverPath || null}
+          territoryStates={territoryStates}
+          onCancelManeuver={onCancelManeuver || (() => {})}
+          onSkipManeuver={onSkipManeuver || (() => {})}
+          validationError={validationError}
+        />
       )}
     </div>
   );

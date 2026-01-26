@@ -30,6 +30,15 @@ import {
   validateSelectDefenderDice,
   DefenderDiceValidationResult,
 } from '@/utils/combatResolution';
+import {
+  validateSelectManeuverSource,
+  validateSelectManeuverTarget,
+  getManeuverableTerritories,
+  getValidManeuverTargets,
+  findPath,
+  getMaxManeuverTroops,
+  ManeuverValidationResult,
+} from '@/utils/maneuverValidation';
 
 /**
  * Deployment history entry for tracking troop placements
@@ -76,6 +85,12 @@ export interface GameStoreState {
   conquestTroopsToMove: number | null;
   isFirstAttackOfTurn: boolean;
 
+  // Maneuver phase state
+  maneuverSourceTerritory: TerritoryId | null;
+  maneuverTargetTerritory: TerritoryId | null;
+  maneuverTroopsToMove: number | null;
+  currentManeuverPath: TerritoryId[] | null;
+
   // UI state
   selectedTerritory: TerritoryId | null;
   hoveredTerritory: TerritoryId | null;
@@ -112,6 +127,14 @@ export interface GameStoreActions {
   cancelAttack: () => void;
   endAttackPhase: () => void;
 
+  // Maneuver phase actions
+  selectManeuverSource: (territoryId: TerritoryId) => ManeuverValidationResult;
+  selectManeuverTarget: (territoryId: TerritoryId) => ManeuverValidationResult;
+  setManeuverTroops: (troops: number) => void;
+  confirmManeuver: () => void;
+  cancelManeuver: () => void;
+  skipManeuver: () => void;
+
   // Attack phase selectors
   getMaxAttackerDice: () => number;
   getAvailableAttackerDice: () => number[];
@@ -128,6 +151,12 @@ export interface GameStoreActions {
   getSelectableTerritories: () => TerritoryId[] | undefined;
   getAttackableTerritories: () => TerritoryId[];
   getValidAttackTargets: () => TerritoryId[];
+
+  // Maneuver phase selectors
+  getManeuverableTerritories: () => TerritoryId[];
+  getValidManeuverTargets: () => TerritoryId[];
+  getCurrentManeuverPath: () => TerritoryId[] | null;
+  getMaxManeuverTroops: () => number;
 
   // Error handling
   clearError: () => void;
@@ -159,6 +188,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   defenderRawRolls: null,
   conquestTroopsToMove: null,
   isFirstAttackOfTurn: true,
+  maneuverSourceTerritory: null,
+  maneuverTargetTerritory: null,
+  maneuverTroopsToMove: null,
+  currentManeuverPath: null,
   selectedTerritory: null,
   hoveredTerritory: null,
   lastError: null,
@@ -179,6 +212,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       defenderRawRolls: null,
       conquestTroopsToMove: null,
       isFirstAttackOfTurn: true,
+      // Reset maneuver state
+      maneuverSourceTerritory: null,
+      maneuverTargetTerritory: null,
+      maneuverTroopsToMove: null,
+      currentManeuverPath: null,
     }));
   },
 
@@ -244,6 +282,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // Select attack target: adjacent enemy territories
         return getValidAttackTargets(
           state.attackingTerritory,
+          state.territories,
+          currentPlayer.id
+        );
+      }
+    }
+
+    // Maneuver phase: SELECT_MANEUVER_SOURCE = select source, SELECT_MANEUVER_TARGET = select target
+    if (state.phase === 'MANEUVER' && currentPlayer) {
+      if (state.subPhase === 'SELECT_MANEUVER_SOURCE' || state.subPhase === null) {
+        // Select maneuver source: player's territories with >= 2 troops
+        return getManeuverableTerritories(state.territories, currentPlayer.id);
+      }
+      if (state.subPhase === 'SELECT_MANEUVER_TARGET' && state.maneuverSourceTerritory) {
+        // Select maneuver target: owned territories reachable through owned territories
+        return getValidManeuverTargets(
+          state.maneuverSourceTerritory,
           state.territories,
           currentPlayer.id
         );
@@ -886,9 +940,237 @@ export const useGameStore = create<GameStore>((set, get) => ({
       isFirstAttackOfTurn: true, // Reset for next turn
       selectedTerritory: null,
       phase: 'MANEUVER' as GamePhase,
+      subPhase: 'SELECT_MANEUVER_SOURCE' as SubPhase,
+      lastError: null,
+    });
+  },
+
+  // Select a territory to maneuver from
+  selectManeuverSource: (territoryId) => {
+    const state = get();
+    const currentPlayer = state.players[0];
+
+    if (!currentPlayer) {
+      const result: ManeuverValidationResult = {
+        valid: false,
+        errorCode: 'NOT_YOUR_TURN',
+        errorMessage: 'No current player',
+      };
+      set({ lastError: result as AttackValidationResult });
+      return result;
+    }
+
+    const isPlayerTurn = state.activePlayerId === currentPlayer.id;
+    const isCorrectPhase =
+      state.phase === 'MANEUVER' &&
+      (state.subPhase === 'SELECT_MANEUVER_SOURCE' || state.subPhase === null);
+
+    const validationResult = validateSelectManeuverSource({
+      territoryId,
+      territoryStates: state.territories,
+      currentPlayerId: currentPlayer.id,
+      isPlayerTurn,
+      isCorrectPhase,
+    });
+
+    if (!validationResult.valid) {
+      set({ lastError: validationResult as AttackValidationResult });
+      return validationResult;
+    }
+
+    // Set maneuver source and transition to SELECT_MANEUVER_TARGET subphase
+    set({
+      maneuverSourceTerritory: territoryId,
+      maneuverTargetTerritory: null,
+      currentManeuverPath: null,
+      selectedTerritory: territoryId,
+      subPhase: 'SELECT_MANEUVER_TARGET' as SubPhase,
+      lastError: null,
+    });
+
+    return { valid: true };
+  },
+
+  // Select a territory to maneuver to
+  selectManeuverTarget: (territoryId) => {
+    const state = get();
+    const currentPlayer = state.players[0];
+
+    if (!currentPlayer) {
+      const result: ManeuverValidationResult = {
+        valid: false,
+        errorCode: 'NOT_YOUR_TURN',
+        errorMessage: 'No current player',
+      };
+      set({ lastError: result as AttackValidationResult });
+      return result;
+    }
+
+    if (!state.maneuverSourceTerritory) {
+      const result: ManeuverValidationResult = {
+        valid: false,
+        errorCode: 'INVALID_PHASE',
+        errorMessage: 'Select a source territory first',
+      };
+      set({ lastError: result as AttackValidationResult });
+      return result;
+    }
+
+    const isPlayerTurn = state.activePlayerId === currentPlayer.id;
+    const isCorrectPhase = state.phase === 'MANEUVER' && state.subPhase === 'SELECT_MANEUVER_TARGET';
+
+    const validationResult = validateSelectManeuverTarget({
+      sourceId: state.maneuverSourceTerritory,
+      targetId: territoryId,
+      territoryStates: state.territories,
+      currentPlayerId: currentPlayer.id,
+      isPlayerTurn,
+      isCorrectPhase,
+    });
+
+    if (!validationResult.valid) {
+      set({ lastError: validationResult as AttackValidationResult });
+      return validationResult;
+    }
+
+    // Find and store the path for display
+    const path = findPath(
+      state.maneuverSourceTerritory,
+      territoryId,
+      state.territories,
+      currentPlayer.id
+    );
+
+    // Default troop count to 1
+    set({
+      maneuverTargetTerritory: territoryId,
+      currentManeuverPath: path,
+      maneuverTroopsToMove: 1,
+      subPhase: 'SET_MANEUVER_TROOPS' as SubPhase,
+      lastError: null,
+    });
+
+    return { valid: true };
+  },
+
+  // Set the number of troops to maneuver
+  setManeuverTroops: (troops) => {
+    const state = get();
+    if (!state.maneuverSourceTerritory) return;
+
+    const maxTroops = getMaxManeuverTroops(state.maneuverSourceTerritory, state.territories);
+    const validTroops = Math.max(1, Math.min(troops, maxTroops));
+    set({ maneuverTroopsToMove: validTroops });
+  },
+
+  // Confirm maneuver and move troops
+  confirmManeuver: () => {
+    const state = get();
+
+    if (
+      !state.maneuverSourceTerritory ||
+      !state.maneuverTargetTerritory ||
+      !state.maneuverTroopsToMove
+    ) {
+      return;
+    }
+
+    const currentPlayer = state.players[0];
+    if (!currentPlayer) return;
+
+    set((prev) => {
+      const updatedTerritories = { ...prev.territories };
+      const troopsToMove = prev.maneuverTroopsToMove || 1;
+
+      // Remove troops from source
+      if (prev.maneuverSourceTerritory && updatedTerritories[prev.maneuverSourceTerritory]) {
+        updatedTerritories[prev.maneuverSourceTerritory] = {
+          ...updatedTerritories[prev.maneuverSourceTerritory],
+          troopCount: updatedTerritories[prev.maneuverSourceTerritory].troopCount - troopsToMove,
+        };
+      }
+
+      // Add troops to target
+      if (prev.maneuverTargetTerritory && updatedTerritories[prev.maneuverTargetTerritory]) {
+        updatedTerritories[prev.maneuverTargetTerritory] = {
+          ...updatedTerritories[prev.maneuverTargetTerritory],
+          troopCount: updatedTerritories[prev.maneuverTargetTerritory].troopCount + troopsToMove,
+        };
+      }
+
+      // Transition to END phase (or next turn in a real game)
+      return {
+        territories: updatedTerritories,
+        maneuverSourceTerritory: null,
+        maneuverTargetTerritory: null,
+        maneuverTroopsToMove: null,
+        currentManeuverPath: null,
+        selectedTerritory: null,
+        phase: 'END' as GamePhase,
+        subPhase: null,
+        lastError: null,
+      };
+    });
+  },
+
+  // Cancel the current maneuver selection (go back to source selection)
+  cancelManeuver: () => {
+    set({
+      maneuverSourceTerritory: null,
+      maneuverTargetTerritory: null,
+      maneuverTroopsToMove: null,
+      currentManeuverPath: null,
+      selectedTerritory: null,
+      subPhase: 'SELECT_MANEUVER_SOURCE' as SubPhase,
+      lastError: null,
+    });
+  },
+
+  // Skip the maneuver phase entirely
+  skipManeuver: () => {
+    set({
+      maneuverSourceTerritory: null,
+      maneuverTargetTerritory: null,
+      maneuverTroopsToMove: null,
+      currentManeuverPath: null,
+      selectedTerritory: null,
+      phase: 'END' as GamePhase,
       subPhase: null,
       lastError: null,
     });
+  },
+
+  // Get territories that can be used as maneuver sources
+  getManeuverableTerritories: () => {
+    const state = get();
+    const currentPlayer = state.players[0];
+    if (!currentPlayer) return [];
+    return getManeuverableTerritories(state.territories, currentPlayer.id);
+  },
+
+  // Get valid maneuver targets for the currently selected source
+  getValidManeuverTargets: () => {
+    const state = get();
+    const currentPlayer = state.players[0];
+    if (!currentPlayer || !state.maneuverSourceTerritory) return [];
+    return getValidManeuverTargets(
+      state.maneuverSourceTerritory,
+      state.territories,
+      currentPlayer.id
+    );
+  },
+
+  // Get the current maneuver path for highlighting
+  getCurrentManeuverPath: () => {
+    const state = get();
+    return state.currentManeuverPath;
+  },
+
+  // Get maximum troops that can be moved
+  getMaxManeuverTroops: () => {
+    const state = get();
+    if (!state.maneuverSourceTerritory) return 0;
+    return getMaxManeuverTroops(state.maneuverSourceTerritory, state.territories);
   },
 
   // Clear error

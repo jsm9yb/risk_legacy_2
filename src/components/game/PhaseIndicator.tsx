@@ -34,6 +34,10 @@ const SUB_PHASE_DISPLAY_NAMES: Record<Exclude<SubPhase, null>, string> = {
   MISSILE_WINDOW: 'MISSILE WINDOW',
   RESOLVE: 'RESOLVING COMBAT',
   TROOP_MOVE: 'MOVE TROOPS',
+  // Maneuver phase sub-phases
+  SELECT_MANEUVER_SOURCE: 'SELECT SOURCE',
+  SELECT_MANEUVER_TARGET: 'SELECT DESTINATION',
+  SET_MANEUVER_TROOPS: 'SET TROOP COUNT',
 };
 
 export function PhaseIndicator({

@@ -20,6 +20,10 @@ export type SubPhase =
   | 'MISSILE_WINDOW'
   | 'RESOLVE'
   | 'TROOP_MOVE'
+  // Maneuver phase sub-phases
+  | 'SELECT_MANEUVER_SOURCE'
+  | 'SELECT_MANEUVER_TARGET'
+  | 'SET_MANEUVER_TROOPS'
   | null;
 
 export type FactionId = 'mechaniker' | 'enclave' | 'balkania' | 'khan' | 'saharan';
