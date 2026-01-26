@@ -12,6 +12,8 @@ interface AttackControlsProps {
   attackingTerritory: TerritoryId | null;
   defendingTerritory: TerritoryId | null;
   territoryStates: Record<TerritoryId, TerritoryState>;
+  availableDice: number[];
+  onSelectDice: (diceCount: number) => void;
   onCancelAttack: () => void;
   onEndAttackPhase: () => void;
   validationError?: ValidationError | null;
@@ -22,6 +24,8 @@ function AttackControls({
   attackingTerritory,
   defendingTerritory,
   territoryStates,
+  availableDice,
+  onSelectDice,
   onCancelAttack,
   onEndAttackPhase,
   validationError,
@@ -117,8 +121,7 @@ function AttackControls({
     );
   }
 
-  // ATTACKER_DICE state: attack target selected, showing attack summary
-  // (Full dice selection will be implemented in Phase 4, Task 2)
+  // ATTACKER_DICE state: attack target selected, choose dice count
   if (subPhase === 'ATTACKER_DICE' && attackingTerritory && defendingTerritory) {
     return (
       <div className="flex items-center justify-between w-full">
@@ -139,7 +142,7 @@ function AttackControls({
             </span>
           </div>
           <div className="text-sm text-board-parchment/70 font-body">
-            Attack declared! (Dice selection coming in next task)
+            Select number of attack dice (max: {availableDice.length > 0 ? Math.max(...availableDice) : 0})
           </div>
           {validationError && (
             <div className="text-sm text-red-400 font-body mt-1 animate-pulse">
@@ -148,14 +151,44 @@ function AttackControls({
           )}
         </div>
 
-        <div className="flex gap-3">
+        {/* Dice selector buttons */}
+        <div className="flex items-center gap-4">
+          <div className="flex gap-2">
+            {[1, 2, 3].map((diceCount) => {
+              const isAvailable = availableDice.includes(diceCount);
+              return (
+                <button
+                  key={diceCount}
+                  onClick={() => isAvailable && onSelectDice(diceCount)}
+                  disabled={!isAvailable}
+                  className={`
+                    w-14 h-14 rounded-lg font-display text-xl font-bold
+                    flex flex-col items-center justify-center gap-0.5
+                    transition-all duration-150 border-2
+                    ${
+                      isAvailable
+                        ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer border-red-400 shadow-lg hover:scale-105'
+                        : 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
+                    }
+                  `}
+                  title={isAvailable ? `Attack with ${diceCount} dice` : 'Not enough troops'}
+                >
+                  <span className="font-numbers text-2xl">{diceCount}</span>
+                  <span className="text-[10px] font-body opacity-80">
+                    {diceCount === 1 ? 'die' : 'dice'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <button
             onClick={onCancelAttack}
-            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+            className="px-4 py-2 rounded-lg font-display text-sm font-semibold
               bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
               transition-all duration-150"
           >
-            Cancel Attack
+            Cancel
           </button>
         </div>
       </div>
@@ -323,6 +356,8 @@ interface ActionBarProps {
   // Attack phase props
   attackingTerritory?: TerritoryId | null;
   defendingTerritory?: TerritoryId | null;
+  availableDice?: number[];
+  onSelectDice?: (diceCount: number) => void;
   onCancelAttack?: () => void;
   onEndAttackPhase?: () => void;
   validationError?: ValidationError | null;
@@ -340,6 +375,8 @@ export function ActionBar({
   onConfirmDeployment,
   attackingTerritory,
   defendingTerritory,
+  availableDice,
+  onSelectDice,
   onCancelAttack,
   onEndAttackPhase,
   validationError,
@@ -370,6 +407,8 @@ export function ActionBar({
           attackingTerritory={attackingTerritory || null}
           defendingTerritory={defendingTerritory || null}
           territoryStates={territoryStates}
+          availableDice={availableDice || []}
+          onSelectDice={onSelectDice || (() => {})}
           onCancelAttack={onCancelAttack || (() => {})}
           onEndAttackPhase={onEndAttackPhase || (() => {})}
           validationError={validationError}

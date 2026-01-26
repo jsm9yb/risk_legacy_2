@@ -11,8 +11,11 @@ import {
 import {
   validateSelectAttackSource,
   validateSelectAttackTarget,
+  validateSelectAttackerDice,
   getAttackableTerritories,
   getValidAttackTargets,
+  getMaxAttackerDice,
+  getAvailableAttackerDice,
   AttackValidationResult,
 } from '@/utils/attackValidation';
 
@@ -51,6 +54,7 @@ export interface GameStoreState {
   // Attack phase state
   attackingTerritory: TerritoryId | null;
   defendingTerritory: TerritoryId | null;
+  attackerDiceCount: number | null;
 
   // UI state
   selectedTerritory: TerritoryId | null;
@@ -79,8 +83,13 @@ export interface GameStoreActions {
   // Attack phase actions
   selectAttackSource: (territoryId: TerritoryId) => AttackValidationResult;
   selectAttackTarget: (territoryId: TerritoryId) => AttackValidationResult;
+  selectAttackerDice: (diceCount: number) => AttackValidationResult;
   cancelAttack: () => void;
   endAttackPhase: () => void;
+
+  // Attack phase selectors
+  getMaxAttackerDice: () => number;
+  getAvailableAttackerDice: () => number[];
 
   // Selectors
   getCurrentPlayer: () => Player | null;
@@ -114,6 +123,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   pendingDeployments: {},
   attackingTerritory: null,
   defendingTerritory: null,
+  attackerDiceCount: null,
   selectedTerritory: null,
   hoveredTerritory: null,
   lastError: null,
@@ -127,6 +137,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       pendingDeployments: {},
       attackingTerritory: null,
       defendingTerritory: null,
+      attackerDiceCount: null,
     }));
   },
 
@@ -473,11 +484,79 @@ export const useGameStore = create<GameStore>((set, get) => ({
     return { valid: true };
   },
 
+  // Select attacker dice count
+  selectAttackerDice: (diceCount) => {
+    const state = get();
+    const currentPlayer = state.players[0];
+
+    if (!currentPlayer) {
+      const result: AttackValidationResult = {
+        valid: false,
+        errorCode: 'NOT_YOUR_TURN',
+        errorMessage: 'No current player',
+      };
+      set({ lastError: result });
+      return result;
+    }
+
+    if (!state.attackingTerritory) {
+      const result: AttackValidationResult = {
+        valid: false,
+        errorCode: 'INVALID_PHASE',
+        errorMessage: 'Select an attacking territory first',
+      };
+      set({ lastError: result });
+      return result;
+    }
+
+    const attackingTroops = state.territories[state.attackingTerritory]?.troopCount || 0;
+    const isPlayerTurn = state.activePlayerId === currentPlayer.id;
+    const isCorrectPhase = state.phase === 'ATTACK' && state.subPhase === 'ATTACKER_DICE';
+
+    const validationResult = validateSelectAttackerDice({
+      diceCount,
+      attackingTroops,
+      isPlayerTurn,
+      isCorrectPhase,
+    });
+
+    if (!validationResult.valid) {
+      set({ lastError: validationResult });
+      return validationResult;
+    }
+
+    // Set dice count and transition to DEFENDER_DICE subphase
+    set({
+      attackerDiceCount: diceCount,
+      subPhase: 'DEFENDER_DICE' as SubPhase,
+      lastError: null,
+    });
+
+    return { valid: true };
+  },
+
+  // Get maximum attacker dice based on current attacking territory
+  getMaxAttackerDice: () => {
+    const state = get();
+    if (!state.attackingTerritory) return 0;
+    const attackingTroops = state.territories[state.attackingTerritory]?.troopCount || 0;
+    return getMaxAttackerDice(attackingTroops);
+  },
+
+  // Get available dice options for attacker
+  getAvailableAttackerDice: () => {
+    const state = get();
+    if (!state.attackingTerritory) return [];
+    const attackingTroops = state.territories[state.attackingTerritory]?.troopCount || 0;
+    return getAvailableAttackerDice(attackingTroops);
+  },
+
   // Cancel the current attack (go back to IDLE)
   cancelAttack: () => {
     set({
       attackingTerritory: null,
       defendingTerritory: null,
+      attackerDiceCount: null,
       selectedTerritory: null,
       subPhase: 'IDLE' as SubPhase,
       lastError: null,
@@ -489,6 +568,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({
       attackingTerritory: null,
       defendingTerritory: null,
+      attackerDiceCount: null,
       selectedTerritory: null,
       phase: 'MANEUVER' as GamePhase,
       subPhase: null,

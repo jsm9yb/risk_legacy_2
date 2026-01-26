@@ -122,11 +122,13 @@ function App() {
     confirmDeployment,
     selectAttackSource,
     selectAttackTarget,
+    selectAttackerDice,
     cancelAttack,
     endAttackPhase,
     getTroopsRemaining,
     getSelectableTerritories,
     getValidAttackTargets,
+    getAvailableAttackerDice,
     clearError,
   } = useGameStore();
 
@@ -176,6 +178,9 @@ function App() {
   // Get selectable territories using store method
   const selectableTerritories = getSelectableTerritories();
 
+  // Get available dice options for attacker
+  const availableDice = getAvailableAttackerDice();
+
   const handleTerritoryClick = useCallback((territoryId: TerritoryId) => {
     // During attack phase, handle source/target selection
     if (phase === 'ATTACK') {
@@ -219,6 +224,14 @@ function App() {
       console.log('Deployment confirmed! Transitioning to ATTACK phase...');
     }
   }, [confirmDeployment]);
+
+  // Select attacker dice count
+  const handleSelectDice = useCallback((diceCount: number) => {
+    const result = selectAttackerDice(diceCount);
+    if (result.valid) {
+      console.log(`Selected ${diceCount} dice! Transitioning to DEFENDER_DICE phase...`);
+    }
+  }, [selectAttackerDice]);
 
   // Get highlighted territories based on phase
   const highlightedTerritories = (() => {
@@ -303,6 +316,8 @@ function App() {
         onConfirmDeployment={handleConfirmDeployment}
         attackingTerritory={attackingTerritory}
         defendingTerritory={defendingTerritory}
+        availableDice={availableDice}
+        onSelectDice={handleSelectDice}
         onCancelAttack={cancelAttack}
         onEndAttackPhase={endAttackPhase}
         validationError={displayError}

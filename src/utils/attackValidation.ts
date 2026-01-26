@@ -310,3 +310,76 @@ export function getValidAttackTargets(
     return neighbor && neighbor.ownerId !== currentPlayerId;
   }) as TerritoryId[];
 }
+
+/**
+ * Calculate maximum attacker dice based on troop count
+ * Per spec section 4.3: max = min(troopCount - 1, 3)
+ */
+export function getMaxAttackerDice(troopCount: number): number {
+  return Math.min(troopCount - 1, 3);
+}
+
+/**
+ * Get available dice options for attacker
+ * Returns array of valid dice counts (1, 2, or 3) based on troop count
+ */
+export function getAvailableAttackerDice(troopCount: number): number[] {
+  const maxDice = getMaxAttackerDice(troopCount);
+  const options: number[] = [];
+  for (let i = 1; i <= maxDice; i++) {
+    options.push(i);
+  }
+  return options;
+}
+
+interface DiceSelectionContext {
+  diceCount: number;
+  attackingTroops: number;
+  isPlayerTurn: boolean;
+  isCorrectPhase: boolean;
+}
+
+/**
+ * Validates attacker dice selection
+ *
+ * Per spec section 4.3:
+ * - Select dice count: 1, 2, or 3
+ * - max = min(troopCount - 1, 3)
+ */
+export function validateSelectAttackerDice(context: DiceSelectionContext): AttackValidationResult {
+  const { diceCount, attackingTroops, isPlayerTurn, isCorrectPhase } = context;
+
+  // Check turn
+  const turnResult = validatePlayerTurn(isPlayerTurn);
+  if (!turnResult.valid) return turnResult;
+
+  // Check phase
+  if (!isCorrectPhase) {
+    return {
+      valid: false,
+      errorCode: 'INVALID_PHASE',
+      errorMessage: 'Cannot select dice in this phase',
+    };
+  }
+
+  // Validate dice count is 1, 2, or 3
+  if (diceCount < 1 || diceCount > 3) {
+    return {
+      valid: false,
+      errorCode: 'INVALID_TERRITORY', // Using existing error code for invalid input
+      errorMessage: 'Dice count must be 1, 2, or 3',
+    };
+  }
+
+  // Validate dice count doesn't exceed maximum
+  const maxDice = getMaxAttackerDice(attackingTroops);
+  if (diceCount > maxDice) {
+    return {
+      valid: false,
+      errorCode: 'INSUFFICIENT_TROOPS',
+      errorMessage: `Cannot use ${diceCount} dice with only ${attackingTroops} troops (max: ${maxDice})`,
+    };
+  }
+
+  return { valid: true };
+}
