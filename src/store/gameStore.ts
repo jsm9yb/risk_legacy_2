@@ -46,6 +46,7 @@ import {
   getStartingTroops,
   HQValidationResult,
 } from '@/utils/hqValidation';
+import { continents } from '@/data/continents';
 import {
   checkVictory,
   VictoryResult,
@@ -156,6 +157,9 @@ export interface GameStoreActions {
   confirmManeuver: () => void;
   cancelManeuver: () => void;
   skipManeuver: () => void;
+
+  // Turn management
+  endTurn: () => void;
 
   // Attack phase selectors
   getMaxAttackerDice: () => number;
@@ -272,18 +276,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ hoveredTerritory: territoryId });
   },
 
-  // Get current player (the player at the local client)
+  // Get current player (the active player whose turn it is)
   getCurrentPlayer: () => {
     const state = get();
-    // For now, return the first player (in real implementation, would be based on userId)
-    return state.players[0] || null;
+    // Return the active player for hotseat play
+    return state.players.find((p) => p.id === state.activePlayerId) || state.players[0] || null;
   },
 
-  // Check if it's the current player's turn
+  // Check if it's the current player's turn (always true for hotseat)
   isMyTurn: () => {
     const state = get();
-    const currentPlayer = state.players[0];
-    return currentPlayer ? state.activePlayerId === currentPlayer.id : false;
+    return state.activePlayerId !== null;
   },
 
   // Get territories owned by a player
@@ -307,7 +310,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Get selectable territories based on current phase
   getSelectableTerritories: () => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (state.phase === 'RECRUIT' && state.subPhase === 'PLACE_TROOPS' && currentPlayer) {
       return Object.values(state.territories)
@@ -354,7 +357,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Get territories that can attack (owned by current player, >= 2 troops)
   getAttackableTerritories: () => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
     if (!currentPlayer) return [];
     return getAttackableTerritories(state.territories, currentPlayer.id);
   },
@@ -362,7 +365,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Get valid attack targets for the currently selected attacking territory
   getValidAttackTargets: () => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
     if (!currentPlayer || !state.attackingTerritory) return [];
     return getValidAttackTargets(
       state.attackingTerritory,
@@ -374,7 +377,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Add a troop to pending deployments
   addTroop: (territoryId) => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: ValidationResult = {
@@ -419,7 +422,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Remove a troop from pending deployments
   removeTroop: (territoryId) => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: ValidationResult = {
@@ -471,7 +474,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Confirm deployment: apply pending deployments to territory states
   confirmDeployment: () => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: ValidationResult = {
@@ -530,7 +533,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Select a territory to attack from
   selectAttackSource: (territoryId) => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: AttackValidationResult = {
@@ -573,7 +576,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Select a territory to attack
   selectAttackTarget: (territoryId) => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: AttackValidationResult = {
@@ -612,12 +615,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return validationResult;
     }
 
-    // Set defending territory and transition to ATTACKER_DICE subphase
-    set({
-      defendingTerritory: territoryId,
-      subPhase: 'ATTACKER_DICE' as SubPhase,
-      lastError: null,
-    });
+    // Check if territory is unoccupied (no defender, no troops)
+    const targetTerritory = state.territories[territoryId];
+    const isUnoccupied = targetTerritory && targetTerritory.troopCount === 0;
+
+    if (isUnoccupied) {
+      // Unoccupied territory - automatic capture, skip dice selection
+      // Go directly to TROOP_MOVE phase with min=1 troop to move
+      set({
+        defendingTerritory: territoryId,
+        attackerDiceCount: 1, // Set to 1 so conquest troop range has min=1
+        defenderDiceCount: 0,
+        subPhase: 'TROOP_MOVE' as SubPhase,
+        conquestTroopsToMove: 1, // Default to minimum
+        lastError: null,
+      });
+    } else {
+      // Occupied territory - proceed with normal combat
+      set({
+        defendingTerritory: territoryId,
+        subPhase: 'ATTACKER_DICE' as SubPhase,
+        lastError: null,
+      });
+    }
 
     return { valid: true };
   },
@@ -625,7 +645,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Select attacker dice count
   selectAttackerDice: (diceCount) => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: AttackValidationResult = {
@@ -769,7 +789,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Roll combat dice and apply modifiers
   rollCombatDice: () => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!state.attackingTerritory || !state.defendingTerritory) return;
     if (!state.attackerDiceCount || !state.defenderDiceCount) return;
@@ -907,7 +927,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
     if (!currentPlayer) return;
 
     // Check if conquering an enemy HQ
@@ -1024,7 +1044,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Select a territory to maneuver from
   selectManeuverSource: (territoryId) => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: ManeuverValidationResult = {
@@ -1070,7 +1090,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Select a territory to maneuver to
   selectManeuverTarget: (territoryId) => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
 
     if (!currentPlayer) {
       const result: ManeuverValidationResult = {
@@ -1151,7 +1171,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
     if (!currentPlayer) return;
 
     set((prev) => {
@@ -1174,7 +1194,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         };
       }
 
-      // Transition to END phase (or next turn in a real game)
+      // Clear maneuver state (endTurn will handle phase transition)
       return {
         territories: updatedTerritories,
         maneuverSourceTerritory: null,
@@ -1182,11 +1202,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         maneuverTroopsToMove: null,
         currentManeuverPath: null,
         selectedTerritory: null,
-        phase: 'END' as GamePhase,
-        subPhase: null,
         lastError: null,
       };
     });
+
+    // End the turn and advance to next player
+    get().endTurn();
   },
 
   // Cancel the current maneuver selection (go back to source selection)
@@ -1210,16 +1231,85 @@ export const useGameStore = create<GameStore>((set, get) => ({
       maneuverTroopsToMove: null,
       currentManeuverPath: null,
       selectedTerritory: null,
-      phase: 'END' as GamePhase,
-      subPhase: null,
       lastError: null,
     });
+    // End the turn and advance to next player
+    get().endTurn();
+  },
+
+  // End the current turn and advance to the next player
+  endTurn: () => {
+    const state = get();
+    const activePlayers = state.players.filter((p) => !p.isEliminated);
+
+    if (activePlayers.length === 0) return;
+
+    // Find current player index among active players
+    const currentIndex = activePlayers.findIndex((p) => p.id === state.activePlayerId);
+    const nextIndex = (currentIndex + 1) % activePlayers.length;
+    const nextPlayer = activePlayers[nextIndex];
+
+    // Increment turn number when cycling back to first player
+    const newTurn = nextIndex <= currentIndex ? state.currentTurn + 1 : state.currentTurn;
+
+    // Calculate reinforcements for next player
+    let controlledTerritories = 0;
+    let totalCityPopulation = 0;
+
+    Object.values(state.territories).forEach((territory) => {
+      if (territory.ownerId === nextPlayer.id) {
+        controlledTerritories++;
+        totalCityPopulation += territory.cityTier;
+      }
+    });
+
+    // Base troops: floor((territories + population) / 3), minimum 3
+    const baseReinforcements = Math.max(3, Math.floor((controlledTerritories + totalCityPopulation) / 3));
+
+    // Continent bonuses
+    const continentBonus = continents
+      .filter((continent) =>
+        continent.territoryIds.every((tid) => state.territories[tid]?.ownerId === nextPlayer.id)
+      )
+      .reduce((sum, continent) => sum + continent.bonus, 0);
+
+    const totalReinforcements = baseReinforcements + continentBonus;
+
+    // Reset conquered this turn flag for previous player, set up next turn
+    set((prev) => ({
+      activePlayerId: nextPlayer.id,
+      currentTurn: newTurn,
+      phase: 'RECRUIT' as GamePhase,
+      subPhase: 'PLACE_TROOPS' as SubPhase,
+      troopsToPlace: totalReinforcements,
+      pendingDeployments: {},
+      isFirstAttackOfTurn: true,
+      selectedTerritory: null,
+      // Reset any attack/maneuver state
+      attackingTerritory: null,
+      defendingTerritory: null,
+      attackerDiceCount: null,
+      defenderDiceCount: null,
+      combatResult: null,
+      attackerRawRolls: null,
+      defenderRawRolls: null,
+      conquestTroopsToMove: null,
+      maneuverSourceTerritory: null,
+      maneuverTargetTerritory: null,
+      maneuverTroopsToMove: null,
+      currentManeuverPath: null,
+      lastError: null,
+      // Reset conqueredThisTurn for all players at start of their turn
+      players: prev.players.map((p) =>
+        p.id === nextPlayer.id ? { ...p, conqueredThisTurn: false } : p
+      ),
+    }));
   },
 
   // Get territories that can be used as maneuver sources
   getManeuverableTerritories: () => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
     if (!currentPlayer) return [];
     return getManeuverableTerritories(state.territories, currentPlayer.id);
   },
@@ -1227,7 +1317,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Get valid maneuver targets for the currently selected source
   getValidManeuverTargets: () => {
     const state = get();
-    const currentPlayer = state.players[0];
+    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
     if (!currentPlayer || !state.maneuverSourceTerritory) return [];
     return getValidManeuverTargets(
       state.maneuverSourceTerritory,

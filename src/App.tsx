@@ -217,8 +217,8 @@ function App() {
     }
   }, [lastError, clearError]);
 
-  // Get current player from store
-  const currentPlayer = players[0] || null;
+  // Get current player (active player for hotseat)
+  const currentPlayer = players.find((p) => p.id === activePlayerId) || players[0] || null;
 
   // Calculate remaining troops using store method
   const troopsRemaining = getTroopsRemaining();
