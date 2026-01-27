@@ -3,8 +3,10 @@ import { GamePhase, SubPhase } from '@/types/game';
 import { factionsById } from '@/data/factions';
 import { continents } from '@/data/continents';
 import { TerritoryState, TerritoryId } from '@/types/territory';
+import { GameLogEntry } from '@/types/gameLog';
 import { PhaseIndicator } from './PhaseIndicator';
 import { CardHand } from './CardHand';
+import { GameLog } from './GameLog';
 import { FactionEmblem } from '@/components/icons';
 
 interface PlayerSidebarProps {
@@ -18,6 +20,10 @@ interface PlayerSidebarProps {
   troopsRemaining?: number;
   onTradeForTroops?: (cardIds: number[]) => void;
   onTradeForStar?: (cardIds: number[]) => void;
+  // Game log props
+  gameLog?: GameLogEntry[];
+  isLogCollapsed?: boolean;
+  onToggleLogCollapse?: () => void;
 }
 
 // Calculate reinforcement preview for a player
@@ -104,6 +110,9 @@ export function PlayerSidebar({
   troopsRemaining,
   onTradeForTroops,
   onTradeForStar,
+  gameLog = [],
+  isLogCollapsed = false,
+  onToggleLogCollapse,
 }: PlayerSidebarProps) {
   const faction = factionsById[currentPlayer.factionId];
   const power = faction?.powers.find((p) => p.id === currentPlayer.activePower);
@@ -171,7 +180,7 @@ export function PlayerSidebar({
       </div>
 
       {/* All Players List */}
-      <div className="p-4 border-b border-board-wood flex-1">
+      <div className="p-4 border-b border-board-wood">
         <h2 className="text-xs uppercase tracking-wider text-board-parchment/60 mb-2 font-body">
           All Players
         </h2>
@@ -215,6 +224,23 @@ export function PlayerSidebar({
           })}
         </div>
       </div>
+
+      {/* Game Log */}
+      {gameLog.length > 0 && (
+        <div className="p-4 border-b border-board-wood flex-1 min-h-0 flex flex-col">
+          <h2 className="text-xs uppercase tracking-wider text-board-parchment/60 mb-2 font-body">
+            Game Log
+          </h2>
+          <div className="flex-1 min-h-0">
+            <GameLog
+              entries={gameLog}
+              currentTurn={currentTurn}
+              isCollapsed={isLogCollapsed}
+              onToggleCollapse={onToggleLogCollapse}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Phase Indicator */}
       <div className="p-4 border-b border-board-wood">

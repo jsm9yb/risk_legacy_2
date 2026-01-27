@@ -150,14 +150,15 @@ export function GameLog({
   onToggleCollapse,
 }: GameLogProps) {
   const [filter, setFilter] = useState<LogEntryType | 'ALL'>('ALL');
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new entries are added
   useEffect(() => {
-    if (scrollRef.current && !isCollapsed) {
+    if (scrollRef.current && !isCollapsed && !isModalOpen) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [entries.length, isCollapsed]);
+  }, [entries.length, isCollapsed, isModalOpen]);
 
   // Filter entries
   const filteredEntries = filter === 'ALL'
@@ -177,55 +178,11 @@ export function GameLog({
     .map(Number)
     .sort((a, b) => a - b);
 
-  if (isCollapsed) {
-    return (
-      <div
-        className="absolute bottom-4 right-4 bg-board-border rounded-lg shadow-lg border-2 border-board-wood cursor-pointer hover:bg-board-border/90 transition-colors"
-        onClick={onToggleCollapse}
-      >
-        <div className="px-4 py-2 flex items-center gap-2">
-          <span className="text-board-parchment/80 font-body text-sm">Game Log</span>
-          <span className="bg-board-wood text-board-parchment text-xs px-2 py-0.5 rounded-full">
-            {entries.length}
-          </span>
-          <svg
-            className="w-4 h-4 text-board-parchment/60"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-          </svg>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="absolute bottom-4 right-4 w-80 bg-board-border rounded-lg shadow-lg border-2 border-board-wood overflow-hidden">
-      {/* Header */}
-      <div
-        className="px-4 py-2 bg-board-wood flex items-center justify-between cursor-pointer"
-        onClick={onToggleCollapse}
-      >
-        <div className="flex items-center gap-2">
-          <span className="font-display text-board-parchment">GAME LOG</span>
-          <span className="bg-board-border text-board-parchment text-xs px-2 py-0.5 rounded-full">
-            Turn {currentTurn}
-          </span>
-        </div>
-        <svg
-          className="w-4 h-4 text-board-parchment/60"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </div>
-
+  // Render the log content (shared between sidebar and modal)
+  const renderLogContent = (maxHeight: string) => (
+    <>
       {/* Filters */}
-      <div className="px-3 py-2 border-b border-board-wood/30 flex gap-1 flex-wrap">
+      <div className="px-2 py-2 border-b border-board-wood/30 flex gap-1 flex-wrap">
         <FilterButton label="All" active={filter === 'ALL'} onClick={() => setFilter('ALL')} />
         <FilterButton
           label="Combat"
@@ -246,8 +203,8 @@ export function GameLog({
 
       {/* Log entries */}
       <div
-        ref={scrollRef}
-        className="h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-board-wood scrollbar-track-transparent"
+        ref={!isModalOpen ? scrollRef : undefined}
+        className={`${maxHeight} overflow-y-auto scrollbar-thin scrollbar-thumb-board-wood scrollbar-track-transparent`}
       >
         {entries.length === 0 ? (
           <div className="p-4 text-center text-board-parchment/50 font-body text-sm">
@@ -270,10 +227,115 @@ export function GameLog({
       </div>
 
       {/* Footer with entry count */}
-      <div className="px-3 py-2 bg-board-wood/20 border-t border-board-wood/30 text-xs text-board-parchment/50 text-center">
+      <div className="px-2 py-1 bg-board-wood/20 border-t border-board-wood/30 text-xs text-board-parchment/50 text-center">
         {filteredEntries.length} of {entries.length} events
       </div>
+    </>
+  );
+
+  // Modal view
+  const renderModal = () => (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={() => setIsModalOpen(false)}
+    >
+      <div
+        className="w-[500px] max-h-[80vh] bg-board-border rounded-lg shadow-xl border-2 border-board-wood overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div className="px-4 py-3 bg-board-wood flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="font-display text-board-parchment text-lg">GAME LOG</span>
+            <span className="bg-board-border text-board-parchment text-xs px-2 py-0.5 rounded-full">
+              Turn {currentTurn}
+            </span>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(false)}
+            className="text-board-parchment/60 hover:text-board-parchment transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {renderLogContent('max-h-[60vh]')}
+      </div>
     </div>
+  );
+
+  // Collapsed view in sidebar
+  if (isCollapsed) {
+    return (
+      <div
+        className="bg-board-wood/30 rounded cursor-pointer hover:bg-board-wood/50 transition-colors"
+        onClick={onToggleCollapse}
+      >
+        <div className="px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-board-parchment/80 font-body text-sm">Game Log</span>
+            <span className="bg-board-wood text-board-parchment text-xs px-2 py-0.5 rounded-full">
+              {entries.length}
+            </span>
+          </div>
+          <svg
+            className="w-4 h-4 text-board-parchment/60"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="bg-board-wood/20 rounded overflow-hidden">
+        {/* Header */}
+        <div
+          className="px-3 py-2 bg-board-wood/50 flex items-center justify-between cursor-pointer"
+          onClick={onToggleCollapse}
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-display text-board-parchment text-sm">GAME LOG</span>
+            <span className="bg-board-border text-board-parchment text-xs px-1.5 py-0.5 rounded-full">
+              T{currentTurn}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsModalOpen(true);
+              }}
+              className="text-board-parchment/60 hover:text-board-parchment transition-colors p-1"
+              title="Expand to modal"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            </button>
+            <svg
+              className="w-4 h-4 text-board-parchment/60"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </div>
+        </div>
+
+        {renderLogContent('h-32')}
+      </div>
+
+      {/* Modal */}
+      {isModalOpen && renderModal()}
+    </>
   );
 }
 

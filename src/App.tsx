@@ -4,10 +4,10 @@ import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { CombatModal } from './components/game/CombatModal';
+import { CampaignCreate } from './components/setup/CampaignCreate';
 import { FactionSelect } from './components/setup/FactionSelect';
 import { HQPlacement } from './components/setup/HQPlacement';
 import { VictoryModal } from './components/game/VictoryModal';
-import { GameLog } from './components/game/GameLog';
 import { SoundToggle } from './components/ui/SoundSettings';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
@@ -15,90 +15,38 @@ import { Player } from './types/player';
 import { FactionId } from './types/game';
 import { useGameStore } from './store/gameStore';
 
-// Mock player data for demonstration
-const mockPlayers: Player[] = [
-  {
-    id: 'player-1',
-    name: 'Jordan',
-    gameId: 'game-1',
-    userId: 'user-1',
-    seatIndex: 0,
-    factionId: 'khan',
-    activePower: 'rapid_deployment',
-    color: '#2F4F4F',
-    hqTerritory: 'eastern_australia',
-    redStars: 2,
-    missiles: 2,
-    cards: [1, 5, 12, 23],
-    isEliminated: false,
-    conqueredThisTurn: false,
-  },
-  {
-    id: 'player-2',
-    name: 'Alex',
-    gameId: 'game-1',
-    userId: 'user-2',
-    seatIndex: 1,
-    factionId: 'enclave',
-    activePower: 'ferocity',
-    color: '#8B4513',
-    hqTerritory: 'ukraine',
-    redStars: 1,
-    missiles: 0,
-    cards: [3, 8],
-    isEliminated: false,
-    conqueredThisTurn: false,
-  },
-  {
-    id: 'player-3',
-    name: 'Sam',
-    gameId: 'game-1',
-    userId: 'user-3',
-    seatIndex: 2,
-    factionId: 'mechaniker',
-    activePower: 'supreme_firepower',
-    color: '#4A90A4',
-    hqTerritory: 'greenland',
-    redStars: 3,
-    missiles: 1,
-    cards: [7, 15, 22, 30, 41],
-    isEliminated: false,
-    conqueredThisTurn: true,
-  },
-  {
-    id: 'player-4',
-    name: 'Jo',
-    gameId: 'game-1',
-    userId: 'user-4',
-    seatIndex: 3,
-    factionId: 'saharan',
-    activePower: 'desert_nomads',
-    color: '#DAA520',
-    hqTerritory: 'north_africa',
-    redStars: 1,
+// Helper to create players from campaign creation
+function createPlayersFromNames(gameId: string, playerNames: string[]): Player[] {
+  return playerNames.map((name, index) => ({
+    id: `player-${index + 1}`,
+    name,
+    gameId,
+    userId: `user-${index + 1}`,
+    seatIndex: index,
+    factionId: '' as FactionId,
+    activePower: '',
+    color: '#888888',
+    hqTerritory: '',
+    redStars: 0,
     missiles: 0,
     cards: [],
     isEliminated: false,
     conqueredThisTurn: false,
-  },
-];
+  }));
+}
 
-// Create initial territory states distributed among players
-function createPlaceholderTerritoryStates(): Record<TerritoryId, TerritoryState> {
+// Create empty territory states for setup phase (no owners yet)
+function createEmptyTerritoryStates(): Record<TerritoryId, TerritoryState> {
   const states: Record<TerritoryId, TerritoryState> = {};
-  const playerIds = mockPlayers.map((p) => p.id);
 
-  territories.forEach((territory, index) => {
-    // Distribute territories among players
-    const ownerId = playerIds[index % playerIds.length];
-
+  territories.forEach((territory) => {
     states[territory.id] = {
       id: territory.id,
       name: territory.name,
       continentId: territory.continentId,
       neighbors: territory.neighbors,
-      ownerId: ownerId,
-      troopCount: Math.floor(Math.random() * 10) + 1,
+      ownerId: null, // No owner during setup
+      troopCount: 0,
       scarId: null,
       cityTier: 0,
       cityName: null,
@@ -167,7 +115,6 @@ function App() {
     selectFaction,
     getTakenFactions,
     getSetupCurrentPlayer,
-    setupTurnIndex,
     placeHQ,
     getLegalHQTerritories,
     getPlacedHQs,
@@ -178,6 +125,10 @@ function App() {
     gameLog,
   } = useGameStore();
 
+  // Local state for campaign creation
+  const [showCampaignCreate, setShowCampaignCreate] = useState(true);
+  const [campaignName, setCampaignName] = useState('');
+
   // Local state for tooltip position (UI-only, doesn't need to be in store)
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -187,18 +138,22 @@ function App() {
   // Local state for game log collapse
   const [isLogCollapsed, setIsLogCollapsed] = useState(false);
 
-  // Initialize store with mock data on mount
-  useEffect(() => {
+  // Handle campaign creation and start
+  const handleStartCampaign = useCallback((name: string, playerNames: string[]) => {
+    const gameId = `game-${Date.now()}`;
+    setCampaignName(name);
+    setShowCampaignCreate(false);
+
     syncFromServer({
-      gameId: 'game-1',
-      status: 'active',
-      currentTurn: 5,
+      gameId,
+      status: 'setup',
+      currentTurn: 0,
       activePlayerId: 'player-1',
-      phase: 'RECRUIT',
-      subPhase: 'PLACE_TROOPS',
-      territories: createPlaceholderTerritoryStates(),
-      players: mockPlayers,
-      troopsToPlace: 8,
+      phase: 'SETUP',
+      subPhase: 'FACTION_SELECTION',
+      territories: createEmptyTerritoryStates(),
+      players: createPlayersFromNames(gameId, playerNames),
+      troopsToPlace: 0,
       pendingDeployments: {},
     });
   }, [syncFromServer]);
@@ -419,6 +374,15 @@ function App() {
     return selectableTerritories;
   })();
 
+  // Show campaign creation screen first
+  if (showCampaignCreate) {
+    return (
+      <div className="h-screen bg-board-wood">
+        <CampaignCreate onStartCampaign={handleStartCampaign} />
+      </div>
+    );
+  }
+
   // Don't render until store is initialized
   if (!currentPlayer || Object.keys(territoryStates).length === 0) {
     return (
@@ -442,7 +406,7 @@ function App() {
             </span>
           )}
           <span className="text-board-parchment/60 font-body text-sm">
-            Game: &quot;Friday Night Wars&quot;
+            Campaign: &quot;{campaignName}&quot;
           </span>
           <SoundToggle />
         </div>
@@ -460,6 +424,9 @@ function App() {
           subPhase={subPhase}
           territories={territoryStates}
           troopsRemaining={troopsRemaining}
+          gameLog={gameLog}
+          isLogCollapsed={isLogCollapsed}
+          onToggleLogCollapse={() => setIsLogCollapsed(!isLogCollapsed)}
         />
 
         {/* Main game area */}
@@ -515,16 +482,6 @@ function App() {
         />
       )}
 
-      {/* Game Log */}
-      {status === 'active' && (
-        <GameLog
-          entries={gameLog}
-          currentTurn={currentTurn}
-          isCollapsed={isLogCollapsed}
-          onToggleCollapse={() => setIsLogCollapsed(!isLogCollapsed)}
-        />
-      )}
-
       {/* Combat Modal */}
       {isCombatModalOpen && attackingTerritory && defendingTerritory && (
         <CombatModal
@@ -555,7 +512,7 @@ function App() {
         <FactionSelect
           isOpen={isFactionSelectOpen}
           currentPlayerId={setupCurrentPlayer.id}
-          currentPlayerName={`Player ${setupTurnIndex + 1}`}
+          currentPlayerName={setupCurrentPlayer.name}
           takenFactions={takenFactions}
           onSelectFaction={handleSelectFaction}
         />
