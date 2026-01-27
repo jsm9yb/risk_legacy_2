@@ -1,10 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { territories } from '@/data/territories';
 import { continentByTerritory } from '@/data/continents';
+import { territoryCenters } from '@/data/territoryCenters';
+import { factionsById } from '@/data/factions';
 import { TerritoryState, TerritoryId } from '@/types/territory';
+import { Player } from '@/types/player';
+
+// SVG viewBox dimensions - must match the overlay SVG viewBox
+const SVG_VIEWBOX_WIDTH = 749.82;
+const SVG_VIEWBOX_HEIGHT = 519.07;
 
 interface GameBoardProps {
   territoryStates: Record<TerritoryId, TerritoryState>;
+  players?: Player[];
   onTerritoryClick?: (territoryId: TerritoryId) => void;
   onTerritoryHover?: (territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => void;
   selectedTerritory?: TerritoryId | null;
@@ -13,17 +21,9 @@ interface GameBoardProps {
   pendingDeployments?: Record<TerritoryId, number>;
 }
 
-// Calculate center point for a territory path (for placing troop badges)
-function getPathCenter(pathElement: SVGPathElement): { x: number; y: number } {
-  const bbox = pathElement.getBBox();
-  return {
-    x: bbox.x + bbox.width / 2,
-    y: bbox.y + bbox.height / 2,
-  };
-}
-
 export function GameBoard({
   territoryStates,
+  players = [],
   onTerritoryClick,
   onTerritoryHover,
   selectedTerritory,
@@ -31,9 +31,21 @@ export function GameBoard({
   selectableTerritories,
   pendingDeployments = {},
 }: GameBoardProps) {
+  // Create a map of player IDs to their faction colors for efficient lookup
+  const playerFactionColors = useMemo(() => {
+    const colorMap: Record<string, string> = {};
+    players.forEach((player) => {
+      if (player.factionId) {
+        const faction = factionsById[player.factionId];
+        if (faction) {
+          colorMap[player.id] = faction.color;
+        }
+      }
+    });
+    return colorMap;
+  }, [players]);
   const svgContainerRef = useRef<HTMLDivElement>(null);
   const [svgContent, setSvgContent] = useState<string>('');
-  const [territoryCenters, setTerritoryCenters] = useState<Record<string, { x: number; y: number }>>({});
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Use refs to access current values in event handlers without recreating listeners
@@ -52,7 +64,7 @@ export function GameBoard({
       });
   }, []);
 
-  // After SVG is injected, calculate territory centers and attach event listeners
+  // After SVG is injected, configure the SVG and attach event listeners
   useEffect(() => {
     if (!svgContent || !svgContainerRef.current) return;
 
@@ -60,13 +72,18 @@ export function GameBoard({
     const svgElement = container.querySelector('svg');
     if (!svgElement) return;
 
-    // Calculate centers for each territory
-    const centers: Record<string, { x: number; y: number }> = {};
+    // Set SVG to fill container with proper aspect ratio
+    // Must set viewBox to match overlay for proper marker alignment
+    svgElement.setAttribute('viewBox', `0 0 ${SVG_VIEWBOX_WIDTH} ${SVG_VIEWBOX_HEIGHT}`);
+    svgElement.setAttribute('width', '100%');
+    svgElement.setAttribute('height', '100%');
+    svgElement.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svgElement.style.display = 'block';
+
+    // Attach event listeners to each territory
     territories.forEach((territory) => {
       const pathElement = svgElement.querySelector(`#${territory.id}`) as SVGPathElement | null;
       if (pathElement) {
-        centers[territory.id] = getPathCenter(pathElement);
-
         // Style the territory path
         pathElement.style.transition = 'fill 0.2s, stroke 0.2s, filter 0.2s, opacity 0.2s';
 
@@ -95,7 +112,6 @@ export function GameBoard({
       }
     });
 
-    setTerritoryCenters(centers);
     setIsLoaded(true);
   }, [svgContent, onTerritoryClick, onTerritoryHover]);
 
@@ -150,20 +166,15 @@ export function GameBoard({
       {/* SVG Map Container */}
       <div
         ref={svgContainerRef}
-        className="w-full h-full"
+        className="absolute inset-0 w-full h-full flex items-center justify-center"
         dangerouslySetInnerHTML={{ __html: svgContent }}
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
       />
 
-      {/* Troop count badges overlay */}
-      {isLoaded && svgContainerRef.current && (
+      {/* Troop count badges overlay - uses same viewBox as the SVG map */}
+      {isLoaded && (
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
-          viewBox="0 0 749.82 519.07"
+          viewBox={`0 0 ${SVG_VIEWBOX_WIDTH} ${SVG_VIEWBOX_HEIGHT}`}
           preserveAspectRatio="xMidYMid meet"
         >
           {territories.map((territory) => {
@@ -174,21 +185,38 @@ export function GameBoard({
             const pending = pendingDeployments[territory.id] || 0;
             const hasPending = pending > 0;
 
+            // Badge sizes scale with the viewBox
+            const badgeRadius = 10;
+            const fontSize = 9;
+            const pendingRadius = 7;
+            const pendingFontSize = 7;
+            const pendingOffset = { x: 9, y: -9 };
+
+            // Get the faction color for the territory owner (if any)
+            const ownerFactionColor = state.ownerId
+              ? playerFactionColors[state.ownerId]
+              : undefined;
+
+            // Badge background: pending (green) > faction color > default brown
+            const badgeFill = hasPending
+              ? '#166534'
+              : ownerFactionColor || '#2C1810';
+
             return (
               <g key={territory.id} transform={`translate(${center.x}, ${center.y})`}>
                 {/* Troop count badge background */}
                 <circle
-                  r="12"
-                  fill={hasPending ? '#166534' : '#2C1810'}
+                  r={badgeRadius}
+                  fill={badgeFill}
                   stroke={hasPending ? '#22c55e' : '#F5E6D3'}
-                  strokeWidth={hasPending ? '2' : '1.5'}
+                  strokeWidth={hasPending ? '1.5' : '1'}
                 />
                 {/* Troop count text */}
                 <text
                   textAnchor="middle"
                   dominantBaseline="central"
                   fill="#F5E6D3"
-                  fontSize="10"
+                  fontSize={fontSize}
                   fontFamily="Oswald, sans-serif"
                   fontWeight="bold"
                 >
@@ -196,13 +224,13 @@ export function GameBoard({
                 </text>
                 {/* Pending deployment indicator */}
                 {hasPending && (
-                  <g transform="translate(10, -10)">
-                    <circle r="8" fill="#22c55e" />
+                  <g transform={`translate(${pendingOffset.x}, ${pendingOffset.y})`}>
+                    <circle r={pendingRadius} fill="#22c55e" />
                     <text
                       textAnchor="middle"
                       dominantBaseline="central"
                       fill="#fff"
-                      fontSize="8"
+                      fontSize={pendingFontSize}
                       fontFamily="Oswald, sans-serif"
                       fontWeight="bold"
                     >
