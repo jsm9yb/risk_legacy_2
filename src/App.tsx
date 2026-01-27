@@ -4,35 +4,55 @@ import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { CombatModal } from './components/game/CombatModal';
-import { CampaignCreate } from './components/setup/CampaignCreate';
 import { FactionSelect } from './components/setup/FactionSelect';
 import { HQPlacement } from './components/setup/HQPlacement';
 import { VictoryModal } from './components/game/VictoryModal';
 import { SoundToggle } from './components/ui/SoundSettings';
+import {
+  CampaignBrowser,
+  PlayerNamePrompt,
+  LobbyScreen,
+} from './components/lobby';
+import { useSocket } from './hooks/useSocket';
 import { territories } from './data/territories';
 import { TerritoryState, TerritoryId } from './types/territory';
 import { Player } from './types/player';
 import { FactionId } from './types/game';
 import { useGameStore } from './store/gameStore';
+import { useLobbyStore } from './store/lobbyStore';
 
-// Helper to create players from campaign creation
-function createPlayersFromNames(gameId: string, playerNames: string[]): Player[] {
-  return playerNames.map((name, index) => ({
-    id: `player-${index + 1}`,
-    name,
-    gameId,
-    userId: `user-${index + 1}`,
-    seatIndex: index,
-    factionId: '' as FactionId,
-    activePower: '',
-    color: '#888888',
-    hqTerritory: '',
-    redStars: 0,
-    missiles: 0,
-    cards: [],
-    isEliminated: false,
-    conqueredThisTurn: false,
-  }));
+// Helper to create players from multiplayer lobby
+function createPlayersFromLobby(
+  gameId: string,
+  lobbyPlayers: Array<{ id: string; name: string; socketId: string; seatIndex: number }>,
+  localSocketId: string | null
+): { players: Player[]; localPlayerId: string | null } {
+  let localPlayerId: string | null = null;
+
+  const players = lobbyPlayers.map((lobbyPlayer) => {
+    if (lobbyPlayer.socketId === localSocketId) {
+      localPlayerId = lobbyPlayer.id;
+    }
+
+    return {
+      id: lobbyPlayer.id,
+      name: lobbyPlayer.name,
+      gameId,
+      userId: lobbyPlayer.socketId,
+      seatIndex: lobbyPlayer.seatIndex,
+      factionId: '' as FactionId,
+      activePower: '',
+      color: '#888888',
+      hqTerritory: '',
+      redStars: 0,
+      missiles: 0,
+      cards: [],
+      isEliminated: false,
+      conqueredThisTurn: false,
+    };
+  });
+
+  return { players, localPlayerId };
 }
 
 // Create empty territory states for setup phase (no owners yet)
@@ -59,6 +79,17 @@ function createEmptyTerritoryStates(): Record<TerritoryId, TerritoryState> {
 }
 
 function App() {
+  // Initialize socket connection
+  useSocket();
+
+  // Lobby store state
+  const {
+    currentLobby,
+    gameStarted,
+    initialGameState,
+    socketId,
+  } = useLobbyStore();
+
   // Use Zustand store for game state
   const {
     territories: territoryStates,
@@ -125,8 +156,7 @@ function App() {
     gameLog,
   } = useGameStore();
 
-  // Local state for campaign creation
-  const [showCampaignCreate, setShowCampaignCreate] = useState(true);
+  // Local state for campaign name (from multiplayer)
   const [campaignName, setCampaignName] = useState('');
 
   // Local state for tooltip position (UI-only, doesn't need to be in store)
@@ -138,25 +168,39 @@ function App() {
   // Local state for game log collapse
   const [isLogCollapsed, setIsLogCollapsed] = useState(false);
 
-  // Handle campaign creation and start
-  const handleStartCampaign = useCallback((name: string, playerNames: string[]) => {
-    const gameId = `game-${Date.now()}`;
-    setCampaignName(name);
-    setShowCampaignCreate(false);
+  // Handle game start from multiplayer lobby
+  useEffect(() => {
+    if (gameStarted && initialGameState) {
+      const { players: gamePlayers, localPlayerId } = createPlayersFromLobby(
+        initialGameState.gameId,
+        initialGameState.players,
+        socketId
+      );
 
-    syncFromServer({
-      gameId,
-      status: 'setup',
-      currentTurn: 0,
-      activePlayerId: 'player-1',
-      phase: 'SETUP',
-      subPhase: 'FACTION_SELECTION',
-      territories: createEmptyTerritoryStates(),
-      players: createPlayersFromNames(gameId, playerNames),
-      troopsToPlace: 0,
-      pendingDeployments: {},
-    });
-  }, [syncFromServer]);
+      setCampaignName(initialGameState.campaignName);
+
+      // Store local player ID for identifying whose turn it is
+      // For now, we'll use the first player as active
+      const firstPlayerId = gamePlayers[0]?.id || null;
+
+      syncFromServer({
+        gameId: initialGameState.gameId,
+        status: 'setup',
+        currentTurn: 0,
+        activePlayerId: firstPlayerId,
+        phase: 'SETUP',
+        subPhase: 'FACTION_SELECTION',
+        territories: createEmptyTerritoryStates(),
+        players: gamePlayers,
+        troopsToPlace: 0,
+        pendingDeployments: {},
+      });
+
+      // Store local player ID in gameStore if needed
+      // This could be used to identify the local player in multiplayer
+      console.log('Game started! Local player ID:', localPlayerId);
+    }
+  }, [gameStarted, initialGameState, socketId, syncFromServer]);
 
   // Sync validation errors from store to local display state with auto-clear
   useEffect(() => {
@@ -374,20 +418,31 @@ function App() {
     return selectableTerritories;
   })();
 
-  // Show campaign creation screen first
-  if (showCampaignCreate) {
+  // Show campaign browser when not in a lobby and game hasn't started
+  if (!currentLobby && !gameStarted) {
     return (
-      <div className="h-screen bg-board-wood">
-        <CampaignCreate onStartCampaign={handleStartCampaign} />
-      </div>
+      <>
+        <CampaignBrowser />
+        <PlayerNamePrompt />
+      </>
     );
   }
 
-  // Don't render until store is initialized
+  // Show lobby screen when in a lobby but game hasn't started
+  if (currentLobby && !gameStarted) {
+    return (
+      <>
+        <LobbyScreen />
+        <PlayerNamePrompt />
+      </>
+    );
+  }
+
+  // Don't render game until store is initialized
   if (!currentPlayer || Object.keys(territoryStates).length === 0) {
     return (
       <div className="flex h-screen items-center justify-center bg-board-wood">
-        <div className="text-board-parchment font-display text-2xl">Loading...</div>
+        <div className="text-board-parchment font-display text-2xl">Loading game...</div>
       </div>
     );
   }
@@ -434,6 +489,7 @@ function App() {
           <div className="w-full h-full rounded-lg overflow-hidden border-4 border-board-border shadow-2xl">
             <GameBoard
               territoryStates={territoryStates}
+              players={players}
               onTerritoryClick={handleTerritoryClick}
               onTerritoryHover={handleTerritoryHover}
               selectedTerritory={selectedTerritory}
@@ -479,6 +535,11 @@ function App() {
         <TerritoryTooltip
           territory={territoryStates[hoveredTerritory]}
           position={tooltipPosition}
+          ownerName={
+            territoryStates[hoveredTerritory].ownerId
+              ? players.find((p) => p.id === territoryStates[hoveredTerritory].ownerId)?.name
+              : undefined
+          }
         />
       )}
 
