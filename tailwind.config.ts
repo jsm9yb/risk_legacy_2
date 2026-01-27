@@ -34,13 +34,89 @@ export default {
           '60%': { transform: 'scale(1.1) rotate(10deg)', opacity: '1' },
           '100%': { transform: 'scale(1) rotate(0deg)', opacity: '1' }
         },
-        // Dice rolling/spinning animation
+        // Dice rolling/spinning animation (legacy 2D)
         diceRoll: {
           '0%': { transform: 'rotateX(0deg) rotateY(0deg)' },
           '25%': { transform: 'rotateX(90deg) rotateY(45deg)' },
           '50%': { transform: 'rotateX(180deg) rotateY(90deg)' },
           '75%': { transform: 'rotateX(270deg) rotateY(135deg)' },
           '100%': { transform: 'rotateX(360deg) rotateY(180deg)' }
+        },
+        // 3D dice rolling animation with tumbling
+        dice3DRoll: {
+          '0%': { transform: 'rotateX(0deg) rotateY(0deg) rotateZ(0deg)' },
+          '20%': { transform: 'rotateX(180deg) rotateY(90deg) rotateZ(45deg)' },
+          '40%': { transform: 'rotateX(360deg) rotateY(180deg) rotateZ(90deg)' },
+          '60%': { transform: 'rotateX(540deg) rotateY(270deg) rotateZ(135deg)' },
+          '80%': { transform: 'rotateX(720deg) rotateY(360deg) rotateZ(180deg)' },
+          '100%': { transform: 'rotateX(900deg) rotateY(450deg) rotateZ(225deg)' }
+        },
+        // Physics-based roll with bounce and tumble
+        dicePhysicsRoll: {
+          '0%': {
+            transform: 'translateY(var(--dice-start-y, -30px)) translateX(var(--dice-start-x, 0px))',
+            opacity: '0'
+          },
+          '15%': {
+            transform: 'translateY(0px) translateX(0px)',
+            opacity: '1'
+          },
+          '25%': {
+            transform: 'translateY(-15px) translateX(2px)'
+          },
+          '40%': {
+            transform: 'translateY(0px) translateX(0px)'
+          },
+          '50%': {
+            transform: 'translateY(-8px) translateX(-1px)'
+          },
+          '65%': {
+            transform: 'translateY(0px) translateX(0px)'
+          },
+          '75%': {
+            transform: 'translateY(-3px)'
+          },
+          '100%': {
+            transform: 'translateY(0px) translateX(0px)',
+            opacity: '1'
+          }
+        },
+        // Dice pair sliding toward center for comparison
+        dicePairSlideRight: {
+          '0%': { transform: 'translateX(-30px)', opacity: '0' },
+          '40%': { transform: 'translateX(-30px)', opacity: '0.5' },
+          '100%': { transform: 'translateX(0px)', opacity: '1' }
+        },
+        dicePairSlideLeft: {
+          '0%': { transform: 'translateX(30px)', opacity: '0' },
+          '40%': { transform: 'translateX(30px)', opacity: '0.5' },
+          '100%': { transform: 'translateX(0px)', opacity: '1' }
+        },
+        // Pulsing glow for winning die
+        diceWinGlow: {
+          '0%': {
+            filter: 'drop-shadow(0 0 0px rgba(74, 222, 128, 0))',
+            transform: 'scale(1)'
+          },
+          '50%': {
+            filter: 'drop-shadow(0 0 12px rgba(74, 222, 128, 0.8))',
+            transform: 'scale(1.05)'
+          },
+          '100%': {
+            filter: 'drop-shadow(0 0 6px rgba(74, 222, 128, 0.4))',
+            transform: 'scale(1)'
+          }
+        },
+        // Subtle desaturation for losing die
+        diceLoseFade: {
+          '0%': {
+            opacity: '1',
+            filter: 'saturate(1) brightness(1)'
+          },
+          '100%': {
+            opacity: '0.6',
+            filter: 'saturate(0.5) brightness(0.8)'
+          }
         },
         // Dice value reveal with slight bounce
         diceSettle: {
@@ -139,6 +215,12 @@ export default {
       animation: {
         'dice-appear': 'diceAppear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
         'dice-roll': 'diceRoll 0.3s linear infinite',
+        'dice-3d-roll': 'dice3DRoll 0.6s linear infinite',
+        'dice-physics-roll': 'dicePhysicsRoll 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards',
+        'dice-pair-slide-right': 'dicePairSlideRight 0.6s ease-out forwards',
+        'dice-pair-slide-left': 'dicePairSlideLeft 0.6s ease-out forwards',
+        'dice-win-glow': 'diceWinGlow 0.5s ease-out forwards',
+        'dice-lose-fade': 'diceLoseFade 0.4s ease-out forwards',
         'dice-settle': 'diceSettle 0.3s ease-out forwards',
         'modifier-slide': 'modifierSlideIn 0.3s ease-out forwards',
         'casualty-pop': 'casualtyPop 0.4s ease-out forwards',

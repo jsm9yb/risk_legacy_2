@@ -6,9 +6,10 @@ import { factionsById } from '@/data/factions';
 import { CombatResult, DieResult } from '@/utils/combatResolution';
 import { FactionEmblem } from '@/components/icons/FactionEmblems';
 import { SubPhase } from '@/types/game';
+import { DiceRoller, DicePair } from '@/components/dice';
 
-// Animation phase tracking
-type AnimationPhase = 'idle' | 'rolling' | 'settling' | 'showing-modifiers' | 'showing-results' | 'complete';
+// Animation phase tracking - added 'pairing' phase for dice comparison animation
+type AnimationPhase = 'idle' | 'rolling' | 'settling' | 'pairing' | 'showing-modifiers' | 'showing-results' | 'complete';
 
 interface CombatModalProps {
   isOpen: boolean;
@@ -33,8 +34,8 @@ interface CombatModalProps {
 }
 
 /**
- * Single die display component with value and modifiers
- * Supports animation phases: rolling, settling, complete
+ * Single die display component with 3D dice and modifiers
+ * Supports animation phases: rolling, settling, pairing, complete
  */
 function DieDisplay({
   die,
@@ -48,57 +49,33 @@ function DieDisplay({
   dieIndex: number;
 }) {
   const hasModifiers = die.modifiers.length > 0;
-  const bgColor = isAttacker ? 'bg-red-600' : 'bg-blue-600';
-  const borderColor = isAttacker ? 'border-red-400' : 'border-blue-400';
-
-  // Random rolling values for animation
-  const [rollingValue, setRollingValue] = useState(1);
-
-  // Update rolling value rapidly during roll phase
-  useEffect(() => {
-    if (animationPhase === 'rolling') {
-      const interval = setInterval(() => {
-        setRollingValue(Math.floor(Math.random() * 6) + 1);
-      }, 50);
-      return () => clearInterval(interval);
-    }
-  }, [animationPhase]);
+  const color = isAttacker ? 'red' : 'blue';
 
   // Staggered animation delay based on die index
   const appearDelay = `${dieIndex * 100}ms`;
-  const settleDelay = `${dieIndex * 80}ms`;
   const modifierDelay = `${dieIndex * 100 + 200}ms`;
 
   const isRolling = animationPhase === 'rolling';
-  const isSettling = animationPhase === 'settling';
   const showModifiers = animationPhase === 'showing-modifiers' || animationPhase === 'showing-results' || animationPhase === 'complete';
-  const showFinalValue = animationPhase !== 'rolling';
+
+  // Clamp value to valid die range (1-6)
+  const safeValue = Math.max(1, Math.min(6, die.modifiedValue)) as 1 | 2 | 3 | 4 | 5 | 6;
 
   return (
     <div
-      className="flex flex-col items-center gap-1"
+      className={`
+        flex flex-col items-center gap-1
+        ${animationPhase === 'idle' ? 'animate-dice-appear' : ''}
+      `}
       style={{ animationDelay: appearDelay }}
     >
-      <div
-        className={`
-          w-14 h-14 ${bgColor} rounded-lg flex items-center justify-center
-          shadow-lg border-2 ${borderColor}
-          ${isRolling ? 'animate-dice-roll' : ''}
-          ${isSettling ? 'animate-dice-settle' : ''}
-          ${animationPhase === 'idle' ? 'animate-dice-appear' : ''}
-        `}
-        style={isSettling ? { animationDelay: settleDelay } : undefined}
-      >
-        <span
-          className={`
-            font-numbers text-3xl text-white font-bold
-            ${isSettling ? 'animate-dice-settle' : ''}
-          `}
-          style={isSettling ? { animationDelay: settleDelay } : undefined}
-        >
-          {showFinalValue ? die.modifiedValue : rollingValue}
-        </span>
-      </div>
+      <DiceRoller
+        value={safeValue}
+        color={color}
+        isRolling={isRolling}
+        dieIndex={dieIndex}
+        size={56}
+      />
       {hasModifiers && showModifiers && (
         <div
           className="text-xs text-board-parchment/70 flex flex-col items-center animate-modifier-slide"
@@ -111,42 +88,6 @@ function DieDisplay({
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * Comparison result display with animation
- */
-function ComparisonDisplay({
-  attackerValue,
-  defenderValue,
-  attackerWins,
-  index,
-}: {
-  attackerValue: number;
-  defenderValue: number;
-  attackerWins: boolean;
-  index: number;
-}) {
-  const animDelay = `${index * 150}ms`;
-
-  return (
-    <div
-      className="flex items-center gap-2 text-lg font-body animate-fade-in-up"
-      style={{ animationDelay: animDelay }}
-    >
-      <span className={attackerWins ? 'text-green-400 font-bold' : 'text-board-parchment/70'}>
-        {attackerValue}
-      </span>
-      <span className="text-board-parchment/50">vs</span>
-      <span className={!attackerWins ? 'text-green-400 font-bold' : 'text-board-parchment/70'}>
-        {defenderValue}
-      </span>
-      <span className="mx-2">&rarr;</span>
-      <span className={attackerWins ? 'text-red-400' : 'text-blue-400'}>
-        {attackerWins ? 'Attacker wins' : 'Defender wins'}
-      </span>
     </div>
   );
 }
@@ -220,37 +161,43 @@ export function CombatModal({
       setAnimationPhase('idle');
       setShowResults(false);
 
-      // Animation timeline:
-      // 0ms: Dice appear (idle phase triggers appear animation)
-      // 100ms: Start rolling
+      // Animation timeline (revised for 3D dice):
+      // 0ms: Dice containers fade in (idle phase)
+      // 100ms: 3D dice physics roll (drop, bounce, tumble)
       const rollTimer = setTimeout(() => {
         setAnimationPhase('rolling');
       }, 100);
 
-      // 600ms: Stop rolling, start settling
+      // 700ms: Dice land on final values (settling)
       const settleTimer = setTimeout(() => {
         setAnimationPhase('settling');
-      }, 600);
+      }, 700);
 
-      // 1000ms: Show modifiers
+      // 1100ms: Dice pairs slide toward center, VS appears (pairing)
+      const pairingTimer = setTimeout(() => {
+        setAnimationPhase('pairing');
+      }, 1100);
+
+      // 1900ms: Modifier badges animate in (longer pause to see pairing)
       const modifierTimer = setTimeout(() => {
         setAnimationPhase('showing-modifiers');
-      }, 1000);
+      }, 1900);
 
-      // 1400ms: Show comparison results
+      // 2400ms: Winner/loser highlighting, casualties
       const resultsTimer = setTimeout(() => {
         setAnimationPhase('showing-results');
         setShowResults(true);
-      }, 1400);
+      }, 2400);
 
-      // 2000ms: Animation complete
+      // 3000ms: Animation complete, continue button appears
       const completeTimer = setTimeout(() => {
         setAnimationPhase('complete');
-      }, 2000);
+      }, 3000);
 
       return () => {
         clearTimeout(rollTimer);
         clearTimeout(settleTimer);
+        clearTimeout(pairingTimer);
         clearTimeout(modifierTimer);
         clearTimeout(resultsTimer);
         clearTimeout(completeTimer);
@@ -410,75 +357,120 @@ export function CombatModal({
           {/* Combat Results */}
           {subPhase === 'RESOLVE' && combatResult && (
             <div className="border-t border-board-wood/50 pt-6">
-              {/* Dice Display */}
-              <div className="flex justify-between items-start mb-6">
-                {/* Attacker Dice */}
-                <div className="flex-1">
-                  <div className="text-sm text-board-parchment/60 font-body mb-3 text-center">
-                    Attacker Dice
+              {/* Initial Dice Display (before pairing) */}
+              {(animationPhase === 'idle' || animationPhase === 'rolling' || animationPhase === 'settling') && (
+                <div className="flex justify-between items-start mb-6">
+                  {/* Attacker Dice */}
+                  <div className="flex-1">
+                    <div className="text-sm text-board-parchment/60 font-body mb-3 text-center">
+                      Attacker Dice
+                    </div>
+                    <div className="flex justify-center gap-3">
+                      {combatResult.attackerRolls.map((die, i) => (
+                        <DieDisplay
+                          key={i}
+                          die={die}
+                          isAttacker={true}
+                          animationPhase={animationPhase}
+                          dieIndex={i}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex justify-center gap-3">
-                    {combatResult.attackerRolls.map((die, i) => (
-                      <DieDisplay
-                        key={i}
-                        die={die}
-                        isAttacker={true}
-                        animationPhase={animationPhase}
-                        dieIndex={i}
-                      />
-                    ))}
-                  </div>
-                </div>
 
-                {/* Defender Dice */}
-                <div className="flex-1">
-                  <div className="text-sm text-board-parchment/60 font-body mb-3 text-center">
-                    Defender Dice
+                  {/* Defender Dice */}
+                  <div className="flex-1">
+                    <div className="text-sm text-board-parchment/60 font-body mb-3 text-center">
+                      Defender Dice
+                    </div>
+                    <div className="flex justify-center gap-3">
+                      {combatResult.defenderRolls.map((die, i) => (
+                        <DieDisplay
+                          key={i}
+                          die={die}
+                          isAttacker={false}
+                          animationPhase={animationPhase}
+                          dieIndex={i}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex justify-center gap-3">
-                    {combatResult.defenderRolls.map((die, i) => (
-                      <DieDisplay
+                </div>
+              )}
+
+              {/* Dice Pair Comparisons (after pairing phase) */}
+              {(animationPhase === 'pairing' || animationPhase === 'showing-modifiers' || animationPhase === 'showing-results' || animationPhase === 'complete') && (
+                <div className="mb-6">
+                  <div className="text-sm text-board-parchment/60 font-body mb-4 text-center">
+                    Dice Comparisons
+                  </div>
+                  <div className="space-y-4">
+                    {combatResult.comparisons.map((comp, i) => (
+                      <DicePair
                         key={i}
-                        die={die}
-                        isAttacker={false}
-                        animationPhase={animationPhase}
-                        dieIndex={i}
+                        attackerValue={comp.attackerValue}
+                        defenderValue={comp.defenderValue}
+                        attackerWins={comp.attackerWins}
+                        pairIndex={i}
+                        isPairing={animationPhase === 'pairing' || animationPhase === 'showing-modifiers' || animationPhase === 'showing-results' || animationPhase === 'complete'}
+                        showResult={animationPhase === 'showing-results' || animationPhase === 'complete'}
                       />
                     ))}
                   </div>
+
+                  {/* Show modifiers below dice pairs */}
+                  {(animationPhase === 'showing-modifiers' || animationPhase === 'showing-results' || animationPhase === 'complete') && (
+                    <div className="flex justify-between mt-4 px-8">
+                      {/* Attacker modifiers */}
+                      <div className="flex-1 text-center">
+                        {combatResult.attackerRolls.some(d => d.modifiers.length > 0) && (
+                          <div className="text-xs text-board-parchment/70 animate-modifier-slide">
+                            {combatResult.attackerRolls.flatMap((die, i) =>
+                              die.modifiers.map((mod, j) => (
+                                <span key={`${i}-${j}`} className={`block ${mod.delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                  {mod.delta > 0 ? '+' : ''}{mod.delta} {mod.name}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {/* Defender modifiers */}
+                      <div className="flex-1 text-center">
+                        {combatResult.defenderRolls.some(d => d.modifiers.length > 0) && (
+                          <div className="text-xs text-board-parchment/70 animate-modifier-slide">
+                            {combatResult.defenderRolls.flatMap((die, i) =>
+                              die.modifiers.map((mod, j) => (
+                                <span key={`${i}-${j}`} className={`block ${mod.delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                  {mod.delta > 0 ? '+' : ''}{mod.delta} {mod.name}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
 
               {/* Results */}
               {showResults && (
                 <div className="bg-board-wood/30 rounded-lg p-4 mb-4 animate-fade-in-up">
                   <div className="text-center mb-4">
-                    <div className="font-display text-lg text-board-parchment mb-2">Results</div>
-
-                    {/* Comparisons */}
-                    <div className="space-y-2 mb-4">
-                      {combatResult.comparisons.map((comp, i) => (
-                        <ComparisonDisplay
-                          key={i}
-                          attackerValue={comp.attackerValue}
-                          defenderValue={comp.defenderValue}
-                          attackerWins={comp.attackerWins}
-                          index={i}
-                        />
-                      ))}
-                    </div>
+                    <div className="font-display text-lg text-board-parchment mb-2">Battle Outcome</div>
 
                     {/* Casualties with pop animation */}
                     <div className="flex justify-center gap-8 text-lg">
                       <CasualtyDisplay
                         losses={combatResult.attackerLosses}
                         isAttacker={true}
-                        delay={combatResult.comparisons.length * 150}
+                        delay={0}
                       />
                       <CasualtyDisplay
                         losses={combatResult.defenderLosses}
                         isAttacker={false}
-                        delay={combatResult.comparisons.length * 150 + 100}
+                        delay={100}
                       />
                     </div>
 
@@ -486,7 +478,7 @@ export function CombatModal({
                     {combatResult.conquestRequired && (
                       <div
                         className="mt-4 text-green-400 font-display text-xl animate-conquest-pulse"
-                        style={{ animationDelay: `${combatResult.comparisons.length * 150 + 300}ms` }}
+                        style={{ animationDelay: '300ms' }}
                       >
                         &#9733; TERRITORY CONQUERED! &#9733;
                       </div>
@@ -496,7 +488,7 @@ export function CombatModal({
                   {/* Continue button with fade in */}
                   <div
                     className="flex justify-center animate-fade-in-up"
-                    style={{ animationDelay: `${combatResult.comparisons.length * 150 + 400}ms` }}
+                    style={{ animationDelay: '400ms' }}
                   >
                     <button
                       onClick={handleContinue}

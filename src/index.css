@@ -24,6 +24,19 @@ body {
   max-height: 100%;
 }
 
+/* 3D Dice transform utilities */
+.dice-perspective {
+  perspective: 600px;
+}
+
+.dice-preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.dice-face {
+  backface-visibility: hidden;
+}
+
 /* Animation utilities */
 @layer utilities {
   /* Staggered children animation delays */
