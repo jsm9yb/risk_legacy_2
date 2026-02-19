@@ -1,12 +1,14 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { GameBoard } from './components/game/GameBoard';
 import { TerritoryTooltip } from './components/game/TerritoryTooltip';
 import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { CombatModal } from './components/game/CombatModal';
+import { TurnIndicatorOverlay } from './components/game/TurnIndicatorOverlay';
 import { FactionSelect } from './components/setup/FactionSelect';
 import { HQPlacement } from './components/setup/HQPlacement';
 import { VictoryModal } from './components/game/VictoryModal';
+import { PostGameScreen } from './components/game/PostGameScreen';
 import { SoundToggle } from './components/ui/SoundSettings';
 import {
   CampaignBrowser,
@@ -14,12 +16,22 @@ import {
   LobbyScreen,
 } from './components/lobby';
 import { useSocket } from './hooks/useSocket';
+import { useSetupPhaseActions } from './hooks/useSetupPhaseActions';
 import { territories } from './data/territories';
-import { TerritoryState, TerritoryId } from './types/territory';
+import { TerritoryState, TerritoryId, ScarType, CityTier } from './types/territory';
 import { Player } from './types/player';
 import { FactionId } from './types/game';
 import { useGameStore } from './store/gameStore';
 import { useLobbyStore } from './store/lobbyStore';
+
+declare global {
+  interface Window {
+    __RISK_LEGACY_E2E__?: {
+      declareVictory: (winnerId: string, winCondition: 'stars' | 'elimination' | 'domination') => void;
+      getGameState: () => ReturnType<typeof useGameStore.getState>;
+    };
+  }
+}
 
 // Helper to create players from multiplayer lobby
 function createPlayersFromLobby(
@@ -80,7 +92,24 @@ function createEmptyTerritoryStates(): Record<TerritoryId, TerritoryState> {
 
 function App() {
   // Initialize socket connection
-  useSocket();
+  const {
+    completePostGame,
+    declareVictory,
+    sendGameAction,
+    createCampaign,
+    deleteCampaign,
+    refreshCampaigns,
+    joinLobby,
+    getCampaignHistory,
+    getCampaignParticipants,
+    leaveLobby,
+    setReady,
+    transferHost,
+    kickPlayer,
+    startGame,
+    rejoinGame,
+    claimSeat,
+  } = useSocket();
 
   // Lobby store state
   const {
@@ -88,6 +117,10 @@ function App() {
     gameStarted,
     initialGameState,
     socketId,
+    isResuming,
+    postGameWinner,
+    resetGameState: resetLobbyGameState,
+    localPlayerOdId: lobbyLocalPlayerOdId,
   } = useLobbyStore();
 
   // Use Zustand store for game state
@@ -105,34 +138,19 @@ function App() {
     defendingTerritory,
     attackerDiceCount,
     defenderDiceCount,
+    missileWindowEndsAt,
     combatResult,
     conquestTroopsToMove,
     lastError,
     syncFromServer,
     setSelectedTerritory,
     setHoveredTerritory,
-    addTroop,
-    removeTroop,
-    confirmDeployment,
-    selectAttackSource,
-    selectAttackTarget,
-    selectAttackerDice,
-    selectDefenderDice,
-    resolveCombatResult,
     setConquestTroops,
-    confirmConquest,
     cancelAttack,
-    endAttackPhase,
     maneuverSourceTerritory,
     maneuverTargetTerritory,
     currentManeuverPath,
     maneuverTroopsToMove,
-    selectManeuverSource,
-    selectManeuverTarget,
-    setManeuverTroops,
-    confirmManeuver,
-    cancelManeuver,
-    skipManeuver,
     getValidManeuverTargets,
     getMaxManeuverTroops,
     getTroopsRemaining,
@@ -143,10 +161,8 @@ function App() {
     getDefendingPlayer,
     getConquestTroopRange,
     clearError,
-    selectFaction,
     getTakenFactions,
     getSetupCurrentPlayer,
-    placeHQ,
     getLegalHQTerritories,
     getPlacedHQs,
     victoryResult,
@@ -154,6 +170,11 @@ function App() {
     dismissVictory,
     status,
     gameLog,
+    localPlayerOdId,
+    isLocalPlayerTurn,
+    isLocalPlayerSetupTurn,
+    setLocalPlayerOdId,
+    getLocalPlayer,
   } = useGameStore();
 
   // Local state for campaign name (from multiplayer)
@@ -168,8 +189,22 @@ function App() {
   // Local state for game log collapse
   const [isLogCollapsed, setIsLogCollapsed] = useState(false);
 
+  // Track turn changes for turn indicator overlay
+  const [showTurnIndicator, setShowTurnIndicator] = useState(false);
+  const prevTurnRef = useRef<{ turn: number; playerId: string | null }>({ turn: 0, playerId: null });
+  const [pendingManeuverTroops, setPendingManeuverTroops] = useState(1);
+
   // Handle game start from multiplayer lobby
   useEffect(() => {
+    if (isResuming) {
+      // Skip setup initialization - server state will be applied via game:fullState
+      // But do set the local player odId if we have one
+      if (lobbyLocalPlayerOdId) {
+        setLocalPlayerOdId(lobbyLocalPlayerOdId);
+      }
+      return;
+    }
+
     if (gameStarted && initialGameState) {
       const { players: gamePlayers, localPlayerId } = createPlayersFromLobby(
         initialGameState.gameId,
@@ -196,11 +231,15 @@ function App() {
         pendingDeployments: {},
       });
 
-      // Store local player ID in gameStore if needed
-      // This could be used to identify the local player in multiplayer
-      console.log('Game started! Local player ID:', localPlayerId);
+      // Set the local player's persistent identity (odId) if we have one from the lobby
+      if (lobbyLocalPlayerOdId) {
+        setLocalPlayerOdId(lobbyLocalPlayerOdId);
+        console.log('Game started! Local player odId:', lobbyLocalPlayerOdId);
+      } else {
+        console.log('Game started! Local player ID:', localPlayerId);
+      }
     }
-  }, [gameStarted, initialGameState, socketId, syncFromServer]);
+  }, [gameStarted, initialGameState, socketId, syncFromServer, isResuming, lobbyLocalPlayerOdId, setLocalPlayerOdId]);
 
   // Sync validation errors from store to local display state with auto-clear
   useEffect(() => {
@@ -217,8 +256,40 @@ function App() {
     }
   }, [lastError, clearError]);
 
+  useEffect(() => {
+    if (!localPlayerOdId && lobbyLocalPlayerOdId) {
+      setLocalPlayerOdId(lobbyLocalPlayerOdId);
+    }
+  }, [localPlayerOdId, lobbyLocalPlayerOdId, setLocalPlayerOdId]);
+
+  // Get turn enforcement data
+  const isMyTurn = isLocalPlayerTurn();
+  const isMySetupTurn = isLocalPlayerSetupTurn();
+
+  // Detect turn changes and show turn indicator
+  useEffect(() => {
+    const prev = prevTurnRef.current;
+    // Show indicator when turn changes or active player changes (and game is active)
+    if (
+      isMyTurn &&
+      status === 'active' &&
+      phase === 'RECRUIT' &&
+      subPhase === 'PLACE_TROOPS' &&
+      (currentTurn !== prev.turn || activePlayerId !== prev.playerId) &&
+      currentTurn > 0
+    ) {
+      setShowTurnIndicator(true);
+    }
+    prevTurnRef.current = { turn: currentTurn, playerId: activePlayerId };
+  }, [currentTurn, activePlayerId, status, phase, subPhase, isMyTurn]);
+
   // Get current player (active player for hotseat)
-  const currentPlayer = players.find((p) => p.id === activePlayerId) || players[0] || null;
+  const activePlayer = players.find((p) => p.id === activePlayerId) || players[0] || null;
+  const localPlayer =
+    getLocalPlayer() ||
+    (lobbyLocalPlayerOdId
+      ? players.find((p) => p.userId === lobbyLocalPlayerOdId || p.id === lobbyLocalPlayerOdId) || null
+      : null);
 
   // Calculate remaining troops using store method
   const troopsRemaining = getTroopsRemaining();
@@ -240,6 +311,16 @@ function App() {
 
   // Get max maneuver troops
   const maxManeuverTroops = getMaxManeuverTroops();
+
+  // Keep maneuver troop slider value local until confirm action
+  useEffect(() => {
+    if (phase === 'MANEUVER' && subPhase === 'SET_MANEUVER_TROOPS') {
+      const nextTroops = maneuverTroopsToMove ?? 1;
+      setPendingManeuverTroops(nextTroops);
+      return;
+    }
+    setPendingManeuverTroops(1);
+  }, [phase, subPhase, maneuverTroopsToMove]);
 
   // Get setup phase data
   const takenFactions = getTakenFactions();
@@ -266,12 +347,12 @@ function App() {
   const isVictoryModalOpen = status === 'finished' && victoryResult?.isVictory === true;
   const winner = getWinner();
 
-  // Determine if combat modal should be open
+  // Determine if combat modal should be open (now includes ATTACKER_DICE)
   const isCombatModalOpen =
     phase === 'ATTACK' &&
     attackingTerritory !== null &&
     defendingTerritory !== null &&
-    (subPhase === 'DEFENDER_DICE' || subPhase === 'RESOLVE' || subPhase === 'TROOP_MOVE');
+    (subPhase === 'ATTACKER_DICE' || subPhase === 'DEFENDER_DICE' || subPhase === 'MISSILE_WINDOW' || subPhase === 'RESOLVE' || subPhase === 'TROOP_MOVE');
 
   const handleTerritoryClick = useCallback((territoryId: TerritoryId) => {
     // During HQ placement, handle territory selection
@@ -284,13 +365,14 @@ function App() {
     // During attack phase, handle source/target selection
     if (phase === 'ATTACK') {
       if (subPhase === 'IDLE') {
-        // Select attack source
-        selectAttackSource(territoryId);
+        if (!isMyTurn) return;
+        setSelectedTerritory(territoryId);
+        sendGameAction('selectAttackSource', { territoryId });
         return;
       }
       if (subPhase === 'SELECT_ATTACK') {
-        // Select attack target
-        selectAttackTarget(territoryId);
+        if (!isMyTurn) return;
+        sendGameAction('selectAttackTarget', { territoryId });
         return;
       }
     }
@@ -298,20 +380,20 @@ function App() {
     // During maneuver phase, handle source/target selection
     if (phase === 'MANEUVER') {
       if (subPhase === 'SELECT_MANEUVER_SOURCE' || subPhase === null) {
-        // Select maneuver source
-        selectManeuverSource(territoryId);
+        if (!isMyTurn) return;
+        sendGameAction('selectManeuverSource', { territoryId });
         return;
       }
       if (subPhase === 'SELECT_MANEUVER_TARGET') {
-        // Select maneuver target
-        selectManeuverTarget(territoryId);
+        if (!isMyTurn) return;
+        sendGameAction('selectManeuverTarget', { territoryId });
         return;
       }
     }
 
     // Default behavior: toggle selection
     setSelectedTerritory(selectedTerritory === territoryId ? null : territoryId);
-  }, [phase, subPhase, selectedTerritory, setSelectedTerritory, selectAttackSource, selectAttackTarget, selectManeuverSource, selectManeuverTarget]);
+  }, [phase, subPhase, selectedTerritory, isMyTurn, setSelectedTerritory, sendGameAction]);
 
   const handleTerritoryHover = useCallback((territoryId: TerritoryId | null, mousePosition?: { x: number; y: number }) => {
     setHoveredTerritory(territoryId);
@@ -322,67 +404,146 @@ function App() {
 
   // Add a troop to the selected territory's pending deployments
   const handleAddTroop = useCallback((territoryId: TerritoryId) => {
-    addTroop(territoryId);
-  }, [addTroop]);
+    if (!isMyTurn || phase !== 'RECRUIT' || subPhase !== 'PLACE_TROOPS') return;
+    sendGameAction('addTroop', { territoryId });
+  }, [isMyTurn, phase, subPhase, sendGameAction]);
 
   // Remove a troop from the selected territory's pending deployments
   const handleRemoveTroop = useCallback((territoryId: TerritoryId) => {
-    removeTroop(territoryId);
-  }, [removeTroop]);
+    if (!isMyTurn || phase !== 'RECRUIT' || subPhase !== 'PLACE_TROOPS') return;
+    sendGameAction('removeTroop', { territoryId });
+  }, [isMyTurn, phase, subPhase, sendGameAction]);
 
   // Confirm deployment: apply pending deployments to territory states
   const handleConfirmDeployment = useCallback(() => {
-    const result = confirmDeployment();
-    if (result.valid) {
-      console.log('Deployment confirmed! Transitioning to ATTACK phase...');
-    }
-  }, [confirmDeployment]);
+    if (!isMyTurn || phase !== 'RECRUIT' || subPhase !== 'PLACE_TROOPS') return;
+    sendGameAction('confirmDeployment', {});
+  }, [isMyTurn, phase, subPhase, sendGameAction]);
 
   // Select attacker dice count
   const handleSelectDice = useCallback((diceCount: number) => {
-    const result = selectAttackerDice(diceCount);
-    if (result.valid) {
-      console.log(`Selected ${diceCount} dice! Transitioning to DEFENDER_DICE phase...`);
-    }
-  }, [selectAttackerDice]);
+    if (!isMyTurn || phase !== 'ATTACK' || subPhase !== 'ATTACKER_DICE') return;
+    sendGameAction('selectAttackerDice', { diceCount });
+  }, [isMyTurn, phase, subPhase, sendGameAction]);
 
   // Select defender dice count
   const handleSelectDefenderDice = useCallback((diceCount: number) => {
-    const result = selectDefenderDice(diceCount);
-    if (result.valid) {
-      console.log(`Defender selected ${diceCount} dice! Rolling combat...`);
+    if (phase !== 'ATTACK' || subPhase !== 'DEFENDER_DICE') return;
+    sendGameAction('selectDefenderDice', { diceCount });
+  }, [phase, subPhase, sendGameAction]);
+
+  const handleResolveCombat = useCallback(() => {
+    if (phase !== 'ATTACK' || subPhase !== 'RESOLVE') return;
+    sendGameAction('resolveCombat', {});
+  }, [phase, subPhase, sendGameAction]);
+
+  const handleAttackAgain = useCallback(() => {
+    if (!isMyTurn || phase !== 'ATTACK' || subPhase !== 'RESOLVE') return;
+    sendGameAction('attackAgain', {});
+  }, [isMyTurn, phase, subPhase, sendGameAction]);
+
+  const handleSelectNewTarget = useCallback(() => {
+    if (!isMyTurn || phase !== 'ATTACK' || subPhase !== 'RESOLVE') return;
+    sendGameAction('selectNewTarget', {});
+  }, [isMyTurn, phase, subPhase, sendGameAction]);
+
+  const handleUseMissile = useCallback((side: 'attacker' | 'defender', dieIndex: number) => {
+    if (phase !== 'ATTACK' || (subPhase !== 'MISSILE_WINDOW' && subPhase !== 'RESOLVE')) return;
+    sendGameAction('useMissile', { side, dieIndex });
+  }, [phase, subPhase, sendGameAction]);
+
+  const handleConfirmConquest = useCallback(() => {
+    if (phase !== 'ATTACK' || subPhase !== 'TROOP_MOVE') return;
+    const troopsToMove = conquestTroopsToMove ?? conquestTroopRange.min;
+    if (!Number.isInteger(troopsToMove)) return;
+    sendGameAction('confirmConquest', { troops: troopsToMove });
+  }, [phase, subPhase, conquestTroopsToMove, conquestTroopRange.min, sendGameAction]);
+
+  const handleEndAttackPhase = useCallback(() => {
+    if (!isMyTurn || phase !== 'ATTACK') return;
+    sendGameAction('endAttackPhase', {});
+  }, [isMyTurn, phase, sendGameAction]);
+
+  const handleConfirmManeuver = useCallback(() => {
+    if (!isMyTurn || phase !== 'MANEUVER' || subPhase !== 'SET_MANEUVER_TROOPS') return;
+    sendGameAction('confirmManeuver', { troops: pendingManeuverTroops });
+  }, [isMyTurn, phase, subPhase, pendingManeuverTroops, sendGameAction]);
+
+  const handleSkipManeuver = useCallback(() => {
+    if (!isMyTurn || phase !== 'MANEUVER') return;
+    sendGameAction('skipManeuver', {});
+  }, [isMyTurn, phase, sendGameAction]);
+
+  const handleCancelManeuver = useCallback(() => {
+    if (!isMyTurn || phase !== 'MANEUVER') return;
+    sendGameAction('cancelManeuver', {});
+  }, [isMyTurn, phase, sendGameAction]);
+
+  const handleReturnToAttackPhase = useCallback(() => {
+    if (!isMyTurn || phase !== 'MANEUVER') return;
+    sendGameAction('returnToAttackPhase', {});
+  }, [isMyTurn, phase, sendGameAction]);
+
+
+  const {
+    handleSelectFaction,
+    handlePlaceHQ,
+    getStartingTroopsForDisplay,
+  } = useSetupPhaseActions({
+    setupCurrentPlayer,
+    selectedTerritory,
+    isMySetupTurn,
+    isValidHQSelection,
+    setSelectedTerritory,
+    sendGameAction,
+  });
+
+  // Handle going back to the campaign menu
+  const handleBackToMenu = useCallback(() => {
+    // Reset lobby and game state
+    resetLobbyGameState();
+    // Reset game store to initial state
+    syncFromServer({
+      gameId: null,
+      status: 'idle',
+      currentTurn: 0,
+      activePlayerId: null,
+      phase: null,
+      subPhase: null,
+      territories: {},
+      players: [],
+      troopsToPlace: 0,
+      pendingDeployments: {},
+    });
+    setCampaignName('');
+  }, [resetLobbyGameState, syncFromServer]);
+
+  // Handle post-game completion (winner confirmed their rewards)
+  const handlePostGameComplete = useCallback((
+    scarsPlaced: Array<{ territoryId: string; scarType: ScarType }>,
+    citiesBuilt: Array<{ territoryId: string; cityTier: CityTier; cityName: string | null }>
+  ) => {
+    completePostGame(scarsPlaced, citiesBuilt);
+  }, [completePostGame]);
+
+  useEffect(() => {
+    const isE2EEnabled =
+      Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV) ||
+      (typeof window !== 'undefined' && window.location.search.includes('e2e=1'));
+
+    if (!isE2EEnabled) {
+      return;
     }
-  }, [selectDefenderDice]);
 
-  // Continue attack after combat resolution
-  const handleContinueAttack = useCallback(() => {
-    console.log('Continuing attack phase...');
-  }, []);
+    window.__RISK_LEGACY_E2E__ = {
+      declareVictory,
+      getGameState: () => useGameStore.getState(),
+    };
 
-  // Handle faction selection during setup
-  const handleSelectFaction = useCallback((factionId: FactionId, powerId: string) => {
-    if (!setupCurrentPlayer) return;
-    selectFaction(setupCurrentPlayer.id, factionId, powerId);
-    console.log(`Player ${setupCurrentPlayer.id} selected faction ${factionId} with power ${powerId}`);
-  }, [setupCurrentPlayer, selectFaction]);
-
-  // Handle HQ placement confirmation
-  const handlePlaceHQ = useCallback(() => {
-    if (!setupCurrentPlayer || !selectedTerritory) return;
-    placeHQ(setupCurrentPlayer.id, selectedTerritory);
-    console.log(`Player ${setupCurrentPlayer.id} placed HQ at ${selectedTerritory}`);
-    setSelectedTerritory(null);
-  }, [setupCurrentPlayer, selectedTerritory, placeHQ, setSelectedTerritory]);
-
-  // Calculate starting troops for HQ placement display
-  const getStartingTroopsForDisplay = useCallback(() => {
-    if (!setupCurrentPlayer) return 8;
-    // Balkania's "Established" power gives 10 troops instead of 8
-    if (setupCurrentPlayer.factionId === 'balkania' && setupCurrentPlayer.activePower === 'established') {
-      return 10;
-    }
-    return 8;
-  }, [setupCurrentPlayer]);
+    return () => {
+      delete window.__RISK_LEGACY_E2E__;
+    };
+  }, [declareVictory]);
 
   // Get highlighted territories based on phase
   const highlightedTerritories = (() => {
@@ -418,12 +579,31 @@ function App() {
     return selectableTerritories;
   })();
 
+  // Clear stale selection when entering deploy if selected territory isn't currently deployable
+  useEffect(() => {
+    if (phase !== 'RECRUIT' || subPhase !== 'PLACE_TROOPS') return;
+    if (!selectedTerritory || !effectiveSelectableTerritories) return;
+    if (!effectiveSelectableTerritories.includes(selectedTerritory)) {
+      setSelectedTerritory(null);
+    }
+  }, [phase, subPhase, selectedTerritory, effectiveSelectableTerritories, setSelectedTerritory]);
+
   // Show campaign browser when not in a lobby and game hasn't started
   if (!currentLobby && !gameStarted) {
     return (
       <>
-        <CampaignBrowser />
-        <PlayerNamePrompt />
+        <CampaignBrowser
+          createCampaign={createCampaign}
+          deleteCampaign={deleteCampaign}
+          refreshCampaigns={refreshCampaigns}
+          joinLobby={joinLobby}
+          getCampaignHistory={getCampaignHistory}
+          getCampaignParticipants={getCampaignParticipants}
+        />
+        <PlayerNamePrompt
+          joinLobby={joinLobby}
+          getCampaignParticipants={getCampaignParticipants}
+        />
       </>
     );
   }
@@ -432,14 +612,25 @@ function App() {
   if (currentLobby && !gameStarted) {
     return (
       <>
-        <LobbyScreen />
-        <PlayerNamePrompt />
+        <LobbyScreen
+          leaveLobby={leaveLobby}
+          setReady={setReady}
+          transferHost={transferHost}
+          kickPlayer={kickPlayer}
+          startGame={startGame}
+          rejoinGame={rejoinGame}
+          claimSeat={claimSeat}
+        />
+        <PlayerNamePrompt
+          joinLobby={joinLobby}
+          getCampaignParticipants={getCampaignParticipants}
+        />
       </>
     );
   }
 
   // Don't render game until store is initialized
-  if (!currentPlayer || Object.keys(territoryStates).length === 0) {
+  if (!activePlayer || !localPlayer || Object.keys(territoryStates).length === 0) {
     return (
       <div className="flex h-screen items-center justify-center bg-board-wood">
         <div className="text-board-parchment font-display text-2xl">Loading game...</div>
@@ -451,9 +642,21 @@ function App() {
     <div className="flex flex-col h-screen bg-board-wood">
       {/* Header */}
       <header className="h-14 bg-board-border flex items-center justify-between px-4 border-b-2 border-board-wood">
-        <h1 className="text-board-parchment font-display text-xl font-bold">
-          Risk Legacy
-        </h1>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBackToMenu}
+            className="flex items-center gap-1 px-3 py-1.5 bg-board-dark text-board-parchment/80 font-body text-sm rounded border border-board-wood hover:bg-board-wood hover:text-board-parchment transition-colors"
+            title="Back to Campaign Menu"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Menu
+          </button>
+          <h1 className="text-board-parchment font-display text-xl font-bold">
+            Risk Legacy
+          </h1>
+        </div>
         <div className="flex items-center gap-4">
           {hoveredTerritory && (
             <span className="text-board-parchment font-body">
@@ -471,7 +674,7 @@ function App() {
       <div className="flex-1 flex overflow-hidden">
         {/* Player Sidebar */}
         <PlayerSidebar
-          currentPlayer={currentPlayer}
+          localPlayer={localPlayer}
           players={players}
           activePlayerId={activePlayerId || ''}
           currentTurn={currentTurn}
@@ -482,11 +685,13 @@ function App() {
           gameLog={gameLog}
           isLogCollapsed={isLogCollapsed}
           onToggleLogCollapse={() => setIsLogCollapsed(!isLogCollapsed)}
+          isLocalPlayerTurn={isMyTurn}
+          activePlayerName={activePlayer?.name}
         />
 
         {/* Main game area */}
-        <main className="flex-1 p-4 overflow-hidden">
-          <div className="w-full h-full rounded-lg overflow-hidden border-4 border-board-border shadow-2xl">
+        <main className="flex-1 p-4 overflow-hidden relative">
+          <div className="w-full h-full rounded-lg overflow-hidden border-4 border-board-border shadow-2xl relative">
             <GameBoard
               territoryStates={territoryStates}
               players={players}
@@ -496,7 +701,22 @@ function App() {
               highlightedTerritories={highlightedTerritories}
               selectableTerritories={effectiveSelectableTerritories}
               pendingDeployments={pendingDeployments}
+              showTroopControls={isMyTurn && phase === 'RECRUIT' && subPhase === 'PLACE_TROOPS'}
+              troopsRemaining={troopsRemaining}
+              onAddTroop={handleAddTroop}
+              onRemoveTroop={handleRemoveTroop}
+              currentManeuverPath={currentManeuverPath}
             />
+
+            {/* Turn Change Indicator */}
+            {activePlayer && (
+              <TurnIndicatorOverlay
+                player={activePlayer}
+                turn={currentTurn}
+                isVisible={showTurnIndicator}
+                onDismiss={() => setShowTurnIndicator(false)}
+              />
+            )}
           </div>
         </main>
       </div>
@@ -517,17 +737,20 @@ function App() {
         availableDice={availableDice}
         onSelectDice={handleSelectDice}
         onCancelAttack={cancelAttack}
-        onEndAttackPhase={endAttackPhase}
+        onEndAttackPhase={handleEndAttackPhase}
         maneuverSourceTerritory={maneuverSourceTerritory}
         maneuverTargetTerritory={maneuverTargetTerritory}
         currentManeuverPath={currentManeuverPath}
-        maneuverTroopsToMove={maneuverTroopsToMove || 1}
+        maneuverTroopsToMove={pendingManeuverTroops}
         maxManeuverTroops={maxManeuverTroops}
-        onSetManeuverTroops={setManeuverTroops}
-        onConfirmManeuver={confirmManeuver}
-        onCancelManeuver={cancelManeuver}
-        onSkipManeuver={skipManeuver}
+        onSetManeuverTroops={setPendingManeuverTroops}
+        onConfirmManeuver={handleConfirmManeuver}
+        onCancelManeuver={handleCancelManeuver}
+        onSkipManeuver={handleSkipManeuver}
+        onBackToAttack={handleReturnToAttackPhase}
         validationError={displayError}
+        isLocalPlayerTurn={isMyTurn}
+        activePlayerName={activePlayer?.name}
       />
 
       {/* Territory Tooltip */}
@@ -551,20 +774,28 @@ function App() {
           attackingTerritory={attackingTerritory}
           defendingTerritory={defendingTerritory}
           territoryStates={territoryStates}
-          attackingPlayer={currentPlayer}
+          attackingPlayer={activePlayer}
           defendingPlayer={defendingPlayer}
           attackerDiceCount={attackerDiceCount}
           defenderDiceCount={defenderDiceCount}
+          missileWindowEndsAt={missileWindowEndsAt}
+          availableAttackerDice={availableDice}
           availableDefenderDice={availableDefenderDice}
           combatResult={combatResult}
           conquestTroopsToMove={conquestTroopsToMove}
           conquestTroopRange={conquestTroopRange}
+          onSelectAttackerDice={handleSelectDice}
           onSelectDefenderDice={handleSelectDefenderDice}
-          onResolveCombat={resolveCombatResult}
+          onUseMissile={handleUseMissile}
+          onResolveCombat={handleResolveCombat}
           onSetConquestTroops={setConquestTroops}
-          onConfirmConquest={confirmConquest}
-          onContinueAttack={handleContinueAttack}
+          onConfirmConquest={handleConfirmConquest}
+          onAttackAgain={handleAttackAgain}
+          onSelectNewTarget={handleSelectNewTarget}
+          onEndAttacks={handleEndAttackPhase}
           onCancel={cancelAttack}
+          localPlayerOdId={localPlayerOdId}
+          localPlayerMissiles={localPlayer.missiles}
         />
       )}
 
@@ -576,6 +807,7 @@ function App() {
           currentPlayerName={setupCurrentPlayer.name}
           takenFactions={takenFactions}
           onSelectFaction={handleSelectFaction}
+          isLocalPlayerTurn={isMySetupTurn}
         />
       )}
 
@@ -591,6 +823,7 @@ function App() {
           onConfirmPlacement={handlePlaceHQ}
           errorMessage={lastError && !lastError.valid ? lastError.errorMessage || null : null}
           placedHQs={placedHQs}
+          isLocalPlayerTurn={isMySetupTurn}
         />
       )}
 
@@ -602,7 +835,29 @@ function App() {
           condition={victoryResult.condition!}
           players={players}
           territories={territoryStates}
-          onContinue={dismissVictory}
+          onContinue={() => {
+            // Map client VictoryCondition to server win condition type
+            const conditionMap: Record<string, 'stars' | 'elimination' | 'domination'> = {
+              'RED_STARS': 'stars',
+              'LAST_STANDING': 'elimination',
+              'ELIMINATION': 'elimination',
+            };
+            const winCondition = conditionMap[victoryResult.condition!] || 'stars';
+
+            // Notify server of victory to transition to post-game phase
+            declareVictory(winner.id, winCondition);
+            // Dismiss the local victory modal
+            dismissVictory();
+          }}
+        />
+      )}
+
+      {/* Post-Game Screen (Write Phase) */}
+      {postGameWinner && (
+        <PostGameScreen
+          winnerId={postGameWinner.winnerId}
+          winnerName={postGameWinner.winnerName}
+          onComplete={handlePostGameComplete}
         />
       )}
     </div>
