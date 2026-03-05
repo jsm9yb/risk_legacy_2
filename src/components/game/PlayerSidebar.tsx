@@ -10,7 +10,7 @@ import { GameLog } from './GameLog';
 import { FactionEmblem } from '@/components/icons';
 
 interface PlayerSidebarProps {
-  currentPlayer: Player;
+  localPlayer: Player;
   players: Player[];
   activePlayerId: string;
   currentTurn: number;
@@ -24,6 +24,9 @@ interface PlayerSidebarProps {
   gameLog?: GameLogEntry[];
   isLogCollapsed?: boolean;
   onToggleLogCollapse?: () => void;
+  // Turn enforcement
+  isLocalPlayerTurn: boolean;
+  activePlayerName?: string;
 }
 
 // Calculate reinforcement preview for a player
@@ -100,7 +103,7 @@ function MissileDisplay({ count }: { count: number }) {
 }
 
 export function PlayerSidebar({
-  currentPlayer,
+  localPlayer,
   players,
   activePlayerId,
   currentTurn,
@@ -113,15 +116,17 @@ export function PlayerSidebar({
   gameLog = [],
   isLogCollapsed = false,
   onToggleLogCollapse,
+  isLocalPlayerTurn,
+  activePlayerName,
 }: PlayerSidebarProps) {
-  const faction = factionsById[currentPlayer.factionId];
-  const power = faction?.powers.find((p) => p.id === currentPlayer.activePower);
-  const reinforcements = calculateReinforcements(currentPlayer, territories);
+  const faction = factionsById[localPlayer.factionId];
+  const power = faction?.powers.find((p) => p.id === localPlayer.activePower);
+  const reinforcements = calculateReinforcements(localPlayer, territories);
   const totalReinforcements = reinforcements.base + reinforcements.continentBonus;
 
   // Count controlled territories for current player
   const controlledTerritoryCount = Object.values(territories).filter(
-    (t) => t.ownerId === currentPlayer.id
+    (t) => t.ownerId === localPlayer.id
   ).length;
 
   return (
@@ -140,7 +145,7 @@ export function PlayerSidebar({
         >
           {/* Faction Emblem + Name */}
           <div className="flex items-center gap-3 mb-2">
-            <FactionEmblem factionId={currentPlayer.factionId} size={40} />
+            <FactionEmblem factionId={localPlayer.factionId} size={40} />
             <div>
               <div className="font-display text-board-parchment font-semibold text-sm">
                 {faction?.name}
@@ -156,14 +161,14 @@ export function PlayerSidebar({
         <div className="mt-3 space-y-2 text-sm">
           <div className="flex justify-between items-center text-board-parchment">
             <span className="font-body">Red Stars:</span>
-            <StarDisplay count={currentPlayer.redStars} />
+            <StarDisplay count={localPlayer.redStars} />
             <span className="text-xs text-board-parchment/60">
-              ({currentPlayer.redStars}/4)
+              ({localPlayer.redStars}/4)
             </span>
           </div>
           <div className="flex justify-between items-center text-board-parchment">
             <span className="font-body">Missiles:</span>
-            <MissileDisplay count={currentPlayer.missiles} />
+            <MissileDisplay count={localPlayer.missiles} />
           </div>
           <div className="flex justify-between items-center text-board-parchment">
             <span className="font-body">Territories:</span>
@@ -188,7 +193,7 @@ export function PlayerSidebar({
           {players.map((player, index) => {
             const playerFaction = factionsById[player.factionId];
             const isActive = player.id === activePlayerId;
-            const isCurrentUser = player.id === currentPlayer.id;
+            const isCurrentUser = player.id === localPlayer.id;
 
             return (
               <div
@@ -248,7 +253,8 @@ export function PlayerSidebar({
           currentTurn={currentTurn}
           phase={phase}
           subPhase={subPhase}
-          isYourTurn={activePlayerId === currentPlayer.id}
+          isYourTurn={isLocalPlayerTurn}
+          activePlayerName={activePlayerName}
           troopsRemaining={troopsRemaining}
         />
       </div>
@@ -256,10 +262,10 @@ export function PlayerSidebar({
       {/* Card Hand */}
       <div className="p-4">
         <CardHand
-          cardIds={currentPlayer.cards}
+          cardIds={localPlayer.cards}
           onTradeForTroops={onTradeForTroops}
           onTradeForStar={onTradeForStar}
-          canTrade={activePlayerId === currentPlayer.id && (phase === 'RECRUIT' || phase === 'ATTACK')}
+          canTrade={isLocalPlayerTurn && (phase === 'RECRUIT' || phase === 'ATTACK')}
         />
       </div>
     </aside>

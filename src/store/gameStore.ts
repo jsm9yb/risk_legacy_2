@@ -67,7 +67,17 @@ export interface DeploymentEntry {
 export interface GameStoreState {
   // Game metadata
   gameId: string | null;
-  status: 'idle' | 'lobby' | 'setup' | 'active' | 'finished';
+  campaignId: string | null;
+  gameNumber: number;
+  status: 'idle' | 'lobby' | 'setup' | 'active' | 'post_game' | 'finished';
+
+  // Server sync
+  serverVersion: number;
+  isSyncing: boolean;
+  lastSyncError: string | null;
+
+  // Local player identity (persistent across reconnections)
+  localPlayerOdId: string | null;
 
   // Turn state
   currentTurn: number;
@@ -90,6 +100,7 @@ export interface GameStoreState {
   defendingTerritory: TerritoryId | null;
   attackerDiceCount: number | null;
   defenderDiceCount: number | null;
+  missileWindowEndsAt: number | null;
 
   // Combat state
   combatResult: CombatResult | null;
@@ -125,9 +136,63 @@ export interface GameStoreState {
 /**
  * Game store actions interface
  */
+/**
+ * Persisted game state from server (for sync)
+ */
+export interface PersistedGameState {
+  gameId: string;
+  campaignId: string;
+  gameNumber: number;
+  status: 'setup' | 'active' | 'post_game' | 'finished';
+  currentTurn: number;
+  activePlayerId: string | null;
+  phase: GamePhase;
+  subPhase: SubPhase;
+  territories: Record<TerritoryId, TerritoryState>;
+  players: Player[];
+  troopsToPlace: number;
+  pendingDeployments: Record<TerritoryId, number>;
+  attackingTerritory: TerritoryId | null;
+  defendingTerritory: TerritoryId | null;
+  attackerDiceCount: number | null;
+  defenderDiceCount: number | null;
+  missileWindowEndsAt: number | null;
+  combatResult: CombatResult | null;
+  conquestTroopsToMove: number | null;
+  maneuverSourceTerritory: TerritoryId | null;
+  maneuverTargetTerritory: TerritoryId | null;
+  maneuverTroopsToMove: number | null;
+  currentManeuverPath: TerritoryId[] | null;
+  isFirstAttackOfTurn: boolean;
+  setupTurnIndex: number;
+  lastUpdatedAt: number;
+  version: number;
+  winnerId?: string | null;
+}
+
+export interface SetupTurnEvent {
+  setupTurnIndex: number;
+  currentSetupPlayerId: string | null;
+  currentSetupPlayerName: string | null;
+  subPhase: SubPhase;
+  version: number;
+}
+
 export interface GameStoreActions {
   // State sync
   syncFromServer: (state: Partial<GameStoreState>) => void;
+  applyServerState: (state: PersistedGameState) => void;
+  applyServerPatch: (patch: Partial<PersistedGameState>, version: number) => void;
+  applySetupTurn: (setupTurn: SetupTurnEvent) => void;
+  setSyncing: (isSyncing: boolean) => void;
+  setSyncError: (error: string | null) => void;
+  getClientVersion: () => number;
+
+  // Local player identity
+  setLocalPlayerOdId: (odId: string | null) => void;
+  isLocalPlayerTurn: () => boolean;
+  getLocalPlayer: () => Player | null;
+  isLocalPlayerSetupTurn: () => boolean;
 
   // Territory selection
   setSelectedTerritory: (territoryId: TerritoryId | null) => void;
@@ -149,6 +214,8 @@ export interface GameStoreActions {
   confirmConquest: () => void;
   cancelAttack: () => void;
   endAttackPhase: () => void;
+  attackAgain: () => void;
+  selectNewTarget: () => void;
 
   // Maneuver phase actions
   selectManeuverSource: (territoryId: TerritoryId) => ManeuverValidationResult;
@@ -157,6 +224,7 @@ export interface GameStoreActions {
   confirmManeuver: () => void;
   cancelManeuver: () => void;
   skipManeuver: () => void;
+  returnToAttackPhase: () => void;
 
   // Turn management
   endTurn: () => void;
@@ -213,7 +281,13 @@ export type GameStore = GameStoreState & GameStoreActions;
 export const useGameStore = create<GameStore>((set, get) => ({
   // Initial state
   gameId: null,
+  campaignId: null,
+  gameNumber: 0,
   status: 'idle',
+  serverVersion: 0,
+  isSyncing: false,
+  lastSyncError: null,
+  localPlayerOdId: null,
   currentTurn: 0,
   activePlayerId: null,
   phase: null,
@@ -226,6 +300,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   defendingTerritory: null,
   attackerDiceCount: null,
   defenderDiceCount: null,
+  missileWindowEndsAt: null,
   combatResult: null,
   attackerRawRolls: null,
   defenderRawRolls: null,
@@ -254,6 +329,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       defendingTerritory: null,
       attackerDiceCount: null,
       defenderDiceCount: null,
+      missileWindowEndsAt: null,
       combatResult: null,
       attackerRawRolls: null,
       defenderRawRolls: null,
@@ -265,6 +341,164 @@ export const useGameStore = create<GameStore>((set, get) => ({
       maneuverTroopsToMove: null,
       currentManeuverPath: null,
     }));
+  },
+
+  // Apply full state from server (used on reconnect/refresh)
+  applyServerState: (serverState) => {
+    set({
+      gameId: serverState.gameId,
+      campaignId: serverState.campaignId,
+      gameNumber: serverState.gameNumber,
+      status: serverState.status,
+      currentTurn: serverState.currentTurn,
+      activePlayerId: serverState.activePlayerId,
+      phase: serverState.phase,
+      subPhase: serverState.subPhase,
+      territories: serverState.territories,
+      players: serverState.players,
+      troopsToPlace: serverState.troopsToPlace,
+      pendingDeployments: serverState.pendingDeployments,
+      attackingTerritory: serverState.attackingTerritory,
+      defendingTerritory: serverState.defendingTerritory,
+      attackerDiceCount: serverState.attackerDiceCount,
+      defenderDiceCount: serverState.defenderDiceCount,
+      missileWindowEndsAt: serverState.missileWindowEndsAt,
+      combatResult: serverState.combatResult,
+      conquestTroopsToMove: serverState.conquestTroopsToMove,
+      maneuverSourceTerritory: serverState.maneuverSourceTerritory,
+      maneuverTargetTerritory: serverState.maneuverTargetTerritory,
+      maneuverTroopsToMove: serverState.maneuverTroopsToMove,
+      currentManeuverPath: serverState.currentManeuverPath,
+      isFirstAttackOfTurn: serverState.isFirstAttackOfTurn,
+      setupTurnIndex: serverState.setupTurnIndex,
+      serverVersion: serverState.version,
+      isSyncing: false,
+      lastSyncError: null,
+      // Reset UI-only state
+      attackerRawRolls: null,
+      defenderRawRolls: null,
+      selectedTerritory: null,
+      hoveredTerritory: null,
+      lastError: null,
+    });
+  },
+
+  // Apply incremental state update from server
+  applyServerPatch: (patch, version) => {
+    set((state) => {
+      // Only apply if this is a newer version
+      if (version <= state.serverVersion) {
+        console.warn(`Ignoring stale patch (version ${version} <= ${state.serverVersion})`);
+        return state;
+      }
+
+      return {
+        ...state,
+        ...patch,
+        serverVersion: version,
+        isSyncing: false,
+      };
+    });
+  },
+
+  // Apply setup turn context signal from server to keep setup UI deterministic.
+  applySetupTurn: (setupTurn) => {
+    set((state) => {
+      if (state.phase !== 'SETUP' && state.status !== 'setup') {
+        return state;
+      }
+
+      return {
+        setupTurnIndex: setupTurn.setupTurnIndex,
+        subPhase: setupTurn.subPhase,
+        activePlayerId: setupTurn.currentSetupPlayerId,
+        selectedTerritory: null,
+        lastError: null,
+      };
+    });
+  },
+
+  // Set syncing state
+  setSyncing: (isSyncing) => {
+    set({ isSyncing });
+  },
+
+  // Set sync error
+  setSyncError: (error) => {
+    set({ lastSyncError: error, isSyncing: false });
+  },
+
+  // Get current client version for optimistic concurrency
+  getClientVersion: () => {
+    return get().serverVersion;
+  },
+
+  // Set local player identity
+  setLocalPlayerOdId: (odId) => {
+    set({ localPlayerOdId: odId });
+  },
+
+  // Check if it's the local player's turn
+  isLocalPlayerTurn: () => {
+    const state = get();
+    const { localPlayerOdId, activePlayerId, players } = state;
+
+    // Without a resolved local identity, never claim turn ownership.
+    if (!localPlayerOdId) {
+      return false;
+    }
+
+    // Find the local player by their odId (stored as userId)
+    const localPlayer = players.find(
+      (p) => p.userId === localPlayerOdId || p.id === localPlayerOdId
+    );
+    if (!localPlayer) {
+      return false;
+    }
+
+    return localPlayer.id === activePlayerId;
+  },
+
+  // Get the local player object
+  getLocalPlayer: () => {
+    const state = get();
+    const { localPlayerOdId, players } = state;
+
+    // If no local player ID set, return null
+    if (!localPlayerOdId) {
+      return null;
+    }
+
+    // Find the local player by their odId (stored as userId)
+    return players.find((p) => p.userId === localPlayerOdId || p.id === localPlayerOdId) || null;
+  },
+
+  // Check if it's the local player's turn during setup phase
+  isLocalPlayerSetupTurn: () => {
+    const state = get();
+    const { localPlayerOdId, players, setupTurnIndex, status } = state;
+
+    // Without a resolved local identity, never claim setup turn ownership.
+    if (!localPlayerOdId) {
+      return false;
+    }
+
+    // Only relevant during setup
+    if (status !== 'setup') {
+      return false;
+    }
+
+    // Find the local player by their odId
+    const localPlayer = players.find(
+      (p) => p.userId === localPlayerOdId || p.id === localPlayerOdId
+    );
+    if (!localPlayer) {
+      return false;
+    }
+
+    // Check if the current setup index points to the local player
+    const setupPlayer = players[setupTurnIndex];
+    return setupPlayer?.id === localPlayer.id;
   },
 
   // Territory selection
@@ -310,15 +544,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Get selectable territories based on current phase
   getSelectableTerritories: () => {
     const state = get();
-    const currentPlayer = state.players.find((p) => p.id === state.activePlayerId) || null;
+    const currentPlayerId = state.activePlayerId;
 
-    if (state.phase === 'RECRUIT' && state.subPhase === 'PLACE_TROOPS' && currentPlayer) {
+    if (state.phase === 'RECRUIT' && state.subPhase === 'PLACE_TROOPS' && currentPlayerId) {
       return Object.values(state.territories)
-        .filter((t) => t.ownerId === currentPlayer.id)
+        .filter((t) => t.ownerId === currentPlayerId)
         .map((t) => t.id);
     }
 
     // Attack phase: IDLE = select source, SELECT_ATTACK = select target
+    const currentPlayer = state.players.find((p) => p.id === currentPlayerId) || null;
     if (state.phase === 'ATTACK' && currentPlayer) {
       if (state.subPhase === 'IDLE') {
         // Select attack source: player's territories with >= 2 troops
@@ -1041,6 +1276,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
 
+  // Attack again from the same source territory to the same target
+  attackAgain: () => {
+    // Keep the same attacking and defending territories, reset to ATTACKER_DICE
+    set({
+      attackerDiceCount: null,
+      defenderDiceCount: null,
+      combatResult: null,
+      attackerRawRolls: null,
+      defenderRawRolls: null,
+      subPhase: 'ATTACKER_DICE' as SubPhase,
+      lastError: null,
+    });
+  },
+
+  // Select a new target (go back to SELECT_ATTACK with same source)
+  selectNewTarget: () => {
+    set({
+      defendingTerritory: null,
+      attackerDiceCount: null,
+      defenderDiceCount: null,
+      combatResult: null,
+      attackerRawRolls: null,
+      defenderRawRolls: null,
+      subPhase: 'SELECT_ATTACK' as SubPhase,
+      lastError: null,
+    });
+  },
+
   // Select a territory to maneuver from
   selectManeuverSource: (territoryId) => {
     const state = get();
@@ -1235,6 +1498,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
     // End the turn and advance to next player
     get().endTurn();
+  },
+
+  // Return to attack phase from maneuver (only if no maneuver has been executed)
+  returnToAttackPhase: () => {
+    set({
+      maneuverSourceTerritory: null,
+      maneuverTargetTerritory: null,
+      maneuverTroopsToMove: null,
+      currentManeuverPath: null,
+      selectedTerritory: null,
+      phase: 'ATTACK' as GamePhase,
+      subPhase: 'IDLE' as SubPhase,
+      lastError: null,
+    });
   },
 
   // End the current turn and advance to the next player

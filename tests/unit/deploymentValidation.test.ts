@@ -158,10 +158,9 @@ describe('Deployment Validation', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('should reject confirming with troops remaining', () => {
+    it('should allow confirming with troops remaining', () => {
       const result = validateConfirmDeployment(3, true, true);
-      expect(result.valid).toBe(false);
-      expect(result.errorCode).toBe('INSUFFICIENT_TROOPS');
+      expect(result.valid).toBe(true);
     });
 
     it('should reject in wrong phase', () => {

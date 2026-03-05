@@ -221,8 +221,6 @@ function ReinforcementControls({
   selectedTerritory,
   territoryStates,
   pendingDeployments,
-  onAddTroop,
-  onRemoveTroop,
   onConfirmDeployment,
   validationError,
 }: ReinforcementControlsProps) {
@@ -239,7 +237,7 @@ function ReinforcementControls({
     : 0;
 
   const totalPending = Object.values(pendingDeployments).reduce((sum, count) => sum + count, 0);
-  const allTroopsPlaced = troopsRemaining === 0;
+  const canConfirmDeployment = troopsRemaining === 0 || totalPending > 0;
 
   return (
     <div className="flex items-center justify-between w-full">
@@ -251,8 +249,8 @@ function ReinforcementControls({
         </div>
         <div className="text-sm text-board-parchment/70 font-body">
           {selectedTerritory
-            ? `Selected: ${selectedTerritoryData?.name}`
-            : 'Click a territory to deploy troops'}
+            ? <>Selected: <span className="text-yellow-400">{selectedTerritoryData?.name}</span> ({currentTroops}{pendingForSelected > 0 && <span className="text-green-400"> +{pendingForSelected}</span>})</>
+            : 'Click a territory to deploy troops, use +/- buttons on map'}
         </div>
         {/* Validation error message */}
         {validationError && (
@@ -262,55 +260,13 @@ function ReinforcementControls({
         )}
       </div>
 
-      {/* Center: +/- controls for selected territory */}
+      {/* Center: Summary of deployments */}
       <div className="flex items-center gap-4">
-        {selectedTerritory && (
-          <div className="flex items-center gap-3 bg-board-wood/50 rounded-lg px-4 py-2">
+        {totalPending > 0 && (
+          <div className="bg-board-wood/50 rounded-lg px-4 py-2">
             <div className="text-board-parchment font-body text-sm">
-              <div>{selectedTerritoryData?.name}</div>
-              <div className="text-xs text-board-parchment/60">
-                Current: {currentTroops} {pendingForSelected > 0 && `(+${pendingForSelected})`}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onRemoveTroop(selectedTerritory)}
-                disabled={pendingForSelected === 0}
-                className={`
-                  w-10 h-10 rounded-lg font-display text-xl font-bold
-                  transition-all duration-150
-                  ${
-                    pendingForSelected > 0
-                      ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer'
-                      : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  }
-                `}
-              >
-                -1
-              </button>
-
-              <div className="w-12 text-center">
-                <span className="font-numbers text-2xl text-yellow-400">
-                  {pendingForSelected}
-                </span>
-              </div>
-
-              <button
-                onClick={() => onAddTroop(selectedTerritory)}
-                disabled={troopsRemaining === 0}
-                className={`
-                  w-10 h-10 rounded-lg font-display text-xl font-bold
-                  transition-all duration-150
-                  ${
-                    troopsRemaining > 0
-                      ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
-                      : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                  }
-                `}
-              >
-                +1
-              </button>
+              <span className="font-numbers text-lg text-green-400">{totalPending}</span>
+              <span className="text-board-parchment/70 ml-2">troop{totalPending !== 1 ? 's' : ''} staged</span>
             </div>
           </div>
         )}
@@ -318,26 +274,26 @@ function ReinforcementControls({
 
       {/* Right side: Done button */}
       <div className="flex flex-col items-end gap-2">
-        {totalPending > 0 && (
-          <div className="text-xs text-board-parchment/60 font-body">
-            {totalPending} troop{totalPending !== 1 ? 's' : ''} staged
-          </div>
-        )}
         <button
           onClick={onConfirmDeployment}
-          disabled={!allTroopsPlaced}
+          disabled={!canConfirmDeployment}
           className={`
             px-6 py-2 rounded-lg font-display text-lg font-semibold
             transition-all duration-150
             ${
-              allTroopsPlaced
+              canConfirmDeployment
                 ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg'
                 : 'bg-gray-600 text-gray-400 cursor-not-allowed'
             }
           `}
         >
-          Done Placing
+          Confirm Deployment
         </button>
+        {troopsRemaining > 0 && totalPending > 0 && (
+          <div className="text-xs text-board-parchment/70 font-body">
+            {troopsRemaining} unplaced troop{troopsRemaining !== 1 ? 's' : ''} will be forfeited
+          </div>
+        )}
       </div>
     </div>
   );
@@ -355,6 +311,7 @@ interface ManeuverControlsProps {
   onConfirmManeuver: () => void;
   onCancelManeuver: () => void;
   onSkipManeuver: () => void;
+  onBackToAttack?: () => void;
   validationError?: ValidationError | null;
 }
 
@@ -370,6 +327,7 @@ function ManeuverControls({
   onConfirmManeuver,
   onCancelManeuver,
   onSkipManeuver,
+  onBackToAttack,
   validationError,
 }: ManeuverControlsProps) {
   const sourceTerritoryData = maneuverSourceTerritory
@@ -401,14 +359,26 @@ function ManeuverControls({
             </div>
           )}
         </div>
-        <button
-          onClick={onSkipManeuver}
-          className="px-6 py-2 rounded-lg font-display text-lg font-semibold
-            bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
-            transition-all duration-150"
-        >
-          Skip Maneuver
-        </button>
+        <div className="flex gap-3">
+          {onBackToAttack && (
+            <button
+              onClick={onBackToAttack}
+              className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+                bg-red-600 hover:bg-red-500 text-white cursor-pointer
+                transition-all duration-150"
+            >
+              &larr; Back to Attack
+            </button>
+          )}
+          <button
+            onClick={onSkipManeuver}
+            className="px-6 py-2 rounded-lg font-display text-lg font-semibold
+              bg-gray-600 hover:bg-gray-500 text-white cursor-pointer
+              transition-all duration-150"
+          >
+            Skip &amp; End Turn
+          </button>
+        </div>
       </div>
     );
   }
@@ -639,7 +609,11 @@ interface ActionBarProps {
   onConfirmManeuver?: () => void;
   onCancelManeuver?: () => void;
   onSkipManeuver?: () => void;
+  onBackToAttack?: () => void;
   validationError?: ValidationError | null;
+  // Turn enforcement
+  isLocalPlayerTurn?: boolean;
+  activePlayerName?: string;
 }
 
 export function ActionBar({
@@ -667,11 +641,32 @@ export function ActionBar({
   onConfirmManeuver,
   onCancelManeuver,
   onSkipManeuver,
+  onBackToAttack,
   validationError,
+  isLocalPlayerTurn = true, // Default to true for hotseat mode
+  activePlayerName,
 }: ActionBarProps) {
   // Only show ActionBar during active game phases
   if (phase === 'SETUP' || phase === 'END') {
     return null;
+  }
+
+  // Show waiting message if it's not the local player's turn
+  if (!isLocalPlayerTurn) {
+    return (
+      <div className="h-20 bg-board-border p-4 border-t-2 border-board-wood">
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <div className="font-display text-lg text-board-parchment/70">
+              Waiting for {activePlayerName || 'opponent'}...
+            </div>
+            <div className="text-sm text-board-parchment/50 font-body mt-1">
+              It's not your turn
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -716,6 +711,7 @@ export function ActionBar({
           onConfirmManeuver={onConfirmManeuver || (() => {})}
           onCancelManeuver={onCancelManeuver || (() => {})}
           onSkipManeuver={onSkipManeuver || (() => {})}
+          onBackToAttack={onBackToAttack}
           validationError={validationError}
         />
       )}

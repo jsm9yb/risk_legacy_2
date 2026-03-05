@@ -99,6 +99,45 @@ body {
   }
 }
 
+/* Territory selectable pulsing animation */
+@keyframes territoryPulse {
+  0%, 100% {
+    stroke-width: 2;
+    filter: drop-shadow(0 0 4px rgba(74, 144, 164, 0.6));
+  }
+  50% {
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 8px rgba(74, 144, 164, 0.9));
+  }
+}
+
+.territory-selectable {
+  animation: territoryPulse 2s ease-in-out infinite;
+}
+
+/* Turn indicator animations */
+@keyframes turnIndicatorSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes turnIndicatorFadeOut {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+}
+
 /* Scrollbar styling */
 .scrollbar-thin {
   scrollbar-width: thin;

@@ -25,6 +25,8 @@ interface HQPlacementProps {
     factionId: string;
     territoryName: string;
   }>;
+  /** Whether it's the local player's turn to place */
+  isLocalPlayerTurn?: boolean;
 }
 
 /**
@@ -46,11 +48,71 @@ export function HQPlacement({
   onConfirmPlacement,
   errorMessage,
   placedHQs,
+  isLocalPlayerTurn = true, // Default true for hotseat mode
 }: HQPlacementProps) {
   if (!isOpen) return null;
 
   const faction = currentPlayer.factionId ? factionsById[currentPlayer.factionId] : null;
   const factionColor = faction?.color || '#666';
+
+  // Show waiting state if it's not the local player's turn
+  if (!isLocalPlayerTurn) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+        {/* Semi-transparent backdrop */}
+        <div className="absolute inset-0 bg-black/30 pointer-events-none" />
+
+        {/* Floating waiting panel */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-auto">
+          <div className="bg-board-border rounded-xl shadow-2xl border-4 border-board-wood max-w-md w-full overflow-hidden">
+            <div
+              className="px-6 py-4 text-center border-b-2 border-board-border"
+              style={{ backgroundColor: factionColor }}
+            >
+              <h2 className="font-display text-xl text-white drop-shadow-lg">
+                HQ PLACEMENT
+              </h2>
+            </div>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                {faction && <FactionEmblem factionId={faction.id} size={32} />}
+              </div>
+              <div className="font-display text-lg text-board-parchment mb-4">
+                Waiting for {currentPlayer.name} to place HQ...
+              </div>
+              <div className="flex justify-center items-center gap-2 text-board-parchment/60">
+                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+
+              {/* Already placed HQs */}
+              {placedHQs.length > 0 && (
+                <div className="mt-6 pt-4 border-t border-board-wood/30">
+                  <div className="text-board-parchment/60 text-xs font-body uppercase mb-2">
+                    Headquarters Already Placed
+                  </div>
+                  <div className="space-y-2">
+                    {placedHQs.map((hq) => {
+                      const hqFaction = factionsById[hq.factionId as keyof typeof factionsById];
+                      return (
+                        <div key={hq.playerName} className="flex items-center justify-center gap-2">
+                          {hqFaction && <FactionEmblem factionId={hqFaction.id} size={16} />}
+                          <span className="text-board-parchment/80 text-sm font-body">
+                            {hq.playerName} - {hq.territoryName}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">

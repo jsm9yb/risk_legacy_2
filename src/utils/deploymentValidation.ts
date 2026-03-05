@@ -192,11 +192,12 @@ export function validateRemoveTroop(
 /**
  * Validates confirming deployment (finalizing troop placement)
  *
- * Per spec section 4.2:
- * - All reinforcements must be placed before proceeding
+ * Per current game rules:
+ * - Confirming with partial deployments is allowed
+ * - Any unplaced reinforcements are forfeited
  */
 export function validateConfirmDeployment(
-  troopsRemaining: number,
+  _troopsRemaining: number,
   isPlayerTurn: boolean,
   isCorrectPhase: boolean
 ): ValidationResult {
@@ -207,15 +208,6 @@ export function validateConfirmDeployment(
   // Check phase
   const phaseResult = validatePhase(isCorrectPhase);
   if (!phaseResult.valid) return phaseResult;
-
-  // All troops must be placed
-  if (troopsRemaining > 0) {
-    return {
-      valid: false,
-      errorCode: 'INSUFFICIENT_TROOPS',
-      errorMessage: `Must place all troops before confirming (${troopsRemaining} remaining)`,
-    };
-  }
 
   return { valid: true };
 }

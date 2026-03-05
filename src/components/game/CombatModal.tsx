@@ -7,6 +7,7 @@ import { CombatResult, DieResult } from '@/utils/combatResolution';
 import { FactionEmblem } from '@/components/icons/FactionEmblems';
 import { SubPhase } from '@/types/game';
 import { DiceRoller, DicePair } from '@/components/dice';
+import { CombatUnitAnimationPanel } from '@/components/game/combat-animations/CombatUnitAnimationPanel';
 
 // Animation phase tracking - added 'pairing' phase for dice comparison animation
 type AnimationPhase = 'idle' | 'rolling' | 'settling' | 'pairing' | 'showing-modifiers' | 'showing-results' | 'complete';
@@ -21,16 +22,25 @@ interface CombatModalProps {
   defendingPlayer: Player | null;
   attackerDiceCount: number | null;
   defenderDiceCount: number | null;
+  missileWindowEndsAt: number | null;
+  availableAttackerDice: number[];
   availableDefenderDice: number[];
   combatResult: CombatResult | null;
   conquestTroopsToMove: number | null;
   conquestTroopRange: { min: number; max: number };
+  onSelectAttackerDice: (count: number) => void;
   onSelectDefenderDice: (count: number) => void;
+  onUseMissile: (side: 'attacker' | 'defender', dieIndex: number) => void;
   onResolveCombat: () => void;
   onSetConquestTroops: (troops: number) => void;
   onConfirmConquest: () => void;
-  onContinueAttack: () => void;
+  onAttackAgain: () => void;
+  onSelectNewTarget: () => void;
+  onEndAttacks: () => void;
   onCancel: () => void;
+  // Turn enforcement
+  localPlayerOdId?: string | null;
+  localPlayerMissiles?: number;
 }
 
 /**
@@ -42,11 +52,15 @@ function DieDisplay({
   isAttacker,
   animationPhase,
   dieIndex,
+  onClick,
+  isClickable,
 }: {
   die: DieResult;
   isAttacker: boolean;
   animationPhase: AnimationPhase;
   dieIndex: number;
+  onClick?: () => void;
+  isClickable?: boolean;
 }) {
   const hasModifiers = die.modifiers.length > 0;
   const color = isAttacker ? 'red' : 'blue';
@@ -69,13 +83,19 @@ function DieDisplay({
       `}
       style={{ animationDelay: appearDelay }}
     >
-      <DiceRoller
-        value={safeValue}
-        color={color}
-        isRolling={isRolling}
-        dieIndex={dieIndex}
-        size={56}
-      />
+      <button
+        onClick={onClick}
+        disabled={!isClickable}
+        className={isClickable ? 'cursor-pointer hover:scale-105 transition-transform duration-150' : 'cursor-default'}
+      >
+        <DiceRoller
+          value={safeValue}
+          color={color}
+          isRolling={isRolling}
+          dieIndex={dieIndex}
+          size={56}
+        />
+      </button>
       {hasModifiers && showModifiers && (
         <div
           className="text-xs text-board-parchment/70 flex flex-col items-center animate-modifier-slide"
@@ -132,19 +152,29 @@ export function CombatModal({
   defendingPlayer,
   attackerDiceCount,
   defenderDiceCount,
+  missileWindowEndsAt,
+  availableAttackerDice,
   availableDefenderDice,
   combatResult,
   conquestTroopsToMove,
   conquestTroopRange,
+  onSelectAttackerDice,
   onSelectDefenderDice,
+  onUseMissile,
   onResolveCombat,
   onSetConquestTroops,
   onConfirmConquest,
-  onContinueAttack,
+  onAttackAgain,
+  onSelectNewTarget,
+  onEndAttacks,
   onCancel,
+  localPlayerOdId,
+  localPlayerMissiles = 0,
 }: CombatModalProps) {
   const [showResults, setShowResults] = useState(false);
   const [animationPhase, setAnimationPhase] = useState<AnimationPhase>('idle');
+  const [isMissileArmed, setIsMissileArmed] = useState(false);
+  const [remainingMissileMs, setRemainingMissileMs] = useState(0);
 
   const attackingTerritoryData = territoriesById[attackingTerritory];
   const defendingTerritoryData = territoriesById[defendingTerritory];
@@ -153,10 +183,19 @@ export function CombatModal({
 
   const attackingFaction = factionsById[attackingPlayer.factionId];
   const defendingFaction = defendingPlayer ? factionsById[defendingPlayer.factionId] : null;
+  const isLocalAttacker = Boolean(localPlayerOdId) && (
+    attackingPlayer.userId === localPlayerOdId || attackingPlayer.id === localPlayerOdId
+  );
+  const isLocalDefender = Boolean(localPlayerOdId) && Boolean(defendingPlayer) && localPlayerOdId !== null && (
+    defendingPlayer?.userId === localPlayerOdId || defendingPlayer?.id === localPlayerOdId
+  );
+  const isMissileWindowOpen = subPhase === 'MISSILE_WINDOW' && remainingMissileMs > 0;
+  const isMissileActionAvailable = (subPhase === 'MISSILE_WINDOW' && remainingMissileMs > 0) || subPhase === 'RESOLVE';
+  const canLocalPlayerUseMissile = isMissileActionAvailable && localPlayerMissiles > 0;
 
   // Animation sequence when combat result arrives
   useEffect(() => {
-    if (combatResult && subPhase === 'RESOLVE') {
+    if (combatResult && subPhase === 'MISSILE_WINDOW') {
       // Reset animation state
       setAnimationPhase('idle');
       setShowResults(false);
@@ -203,19 +242,58 @@ export function CombatModal({
         clearTimeout(completeTimer);
       };
     }
+    if (combatResult && subPhase === 'RESOLVE') {
+      setAnimationPhase('complete');
+      setShowResults(true);
+      return;
+    }
     setShowResults(false);
     setAnimationPhase('idle');
+    setIsMissileArmed(false);
   }, [combatResult, subPhase]);
 
-  // Handle continue after seeing results
-  const handleContinue = useCallback(() => {
-    if (combatResult?.conquestRequired) {
-      onResolveCombat();
-    } else {
-      onResolveCombat();
-      onContinueAttack();
+  useEffect(() => {
+    if (subPhase !== 'MISSILE_WINDOW' || !missileWindowEndsAt) {
+      setRemainingMissileMs(0);
+      return;
     }
-  }, [combatResult, onResolveCombat, onContinueAttack]);
+
+    const tick = () => {
+      setRemainingMissileMs(Math.max(0, missileWindowEndsAt - Date.now()));
+    };
+
+    tick();
+    const interval = setInterval(tick, 100);
+    return () => clearInterval(interval);
+  }, [subPhase, missileWindowEndsAt]);
+
+  const handleUseMissileOnDie = useCallback((side: 'attacker' | 'defender', dieIndex: number) => {
+    if (!isMissileActionAvailable) return;
+    onUseMissile(side, dieIndex);
+    setIsMissileArmed(false);
+  }, [isMissileActionAvailable, onUseMissile]);
+
+  useEffect(() => {
+    if (!isMissileActionAvailable) {
+      setIsMissileArmed(false);
+    }
+  }, [isMissileActionAvailable]);
+
+  // Handle moving to troop movement after conquest
+  const handleMoveToTroopMove = useCallback(() => {
+    onResolveCombat();
+  }, [onResolveCombat]);
+
+  // Calculate remaining troops after combat for display
+  const attackerRemainingTroops = combatResult
+    ? attackingTerritoryState.troopCount - combatResult.attackerLosses
+    : attackingTerritoryState.troopCount;
+  const defenderRemainingTroops = combatResult
+    ? defendingTerritoryState.troopCount - combatResult.defenderLosses
+    : defendingTerritoryState.troopCount;
+
+  // Check if attacker can continue attacking (needs > 1 troop remaining)
+  const canAttackAgain = attackerRemainingTroops > 1 && defenderRemainingTroops > 0;
 
   if (!isOpen) return null;
 
@@ -315,47 +393,126 @@ export function CombatModal({
             </div>
           </div>
 
-          {/* Defender Dice Selection */}
-          {subPhase === 'DEFENDER_DICE' && (
+          <CombatUnitAnimationPanel
+            subPhase={subPhase}
+            animationPhase={animationPhase}
+            attackerFactionId={attackingPlayer.factionId}
+            defenderFactionId={defendingPlayer?.factionId ?? null}
+            combatResult={combatResult}
+          />
+
+          {/* Attacker Dice Selection */}
+          {subPhase === 'ATTACKER_DICE' && (
             <div className="text-center py-6 border-t border-board-wood/50">
-              <div className="font-display text-lg text-board-parchment mb-4">
-                Defender: Select dice count
-              </div>
-              <div className="flex justify-center gap-4">
-                {[1, 2].map((count) => {
-                  const isAvailable = availableDefenderDice.includes(count);
-                  return (
-                    <button
-                      key={count}
-                      onClick={() => isAvailable && onSelectDefenderDice(count)}
-                      disabled={!isAvailable}
-                      className={`
-                        w-20 h-20 rounded-xl font-display text-2xl font-bold
-                        flex flex-col items-center justify-center gap-1
-                        transition-all duration-150 border-2
-                        ${
-                          isAvailable
-                            ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer border-blue-400 shadow-lg hover:scale-105'
-                            : 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
-                        }
-                      `}
-                    >
-                      <span className="font-numbers text-3xl">{count}</span>
-                      <span className="text-sm font-body opacity-80">
-                        {count === 1 ? 'die' : 'dice'}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="text-sm text-board-parchment/60 mt-4 font-body">
-                Max: {Math.max(...availableDefenderDice, 0)} dice
-              </div>
+              {isLocalAttacker ? (
+                <>
+                  <div className="font-display text-lg text-board-parchment mb-4">
+                    Attacker: Select dice count
+                  </div>
+                  <div className="flex justify-center gap-4">
+                    {[1, 2, 3].map((count) => {
+                      const isAvailable = availableAttackerDice.includes(count);
+                      return (
+                        <button
+                          key={count}
+                          onClick={() => isAvailable && onSelectAttackerDice(count)}
+                          disabled={!isAvailable}
+                          className={`
+                            w-20 h-20 rounded-xl font-display text-2xl font-bold
+                            flex flex-col items-center justify-center gap-1
+                            transition-all duration-150 border-2
+                            ${
+                              isAvailable
+                                ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer border-red-400 shadow-lg hover:scale-105'
+                                : 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
+                            }
+                          `}
+                        >
+                          <span className="font-numbers text-3xl">{count}</span>
+                          <span className="text-sm font-body opacity-80">
+                            {count === 1 ? 'die' : 'dice'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="text-sm text-board-parchment/60 mt-4 font-body">
+                    Max: {Math.max(...availableAttackerDice, 0)} dice (must leave 1 troop behind)
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="font-display text-lg text-board-parchment mb-4">
+                    Waiting for {attackingPlayer.name} to select dice...
+                  </div>
+                  <div className="flex justify-center items-center gap-2 text-board-parchment/60">
+                    <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-red-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </>
+              )}
             </div>
           )}
 
+          {/* Defender Dice Selection */}
+          {subPhase === 'DEFENDER_DICE' && (() => {
+            if (!isLocalDefender) {
+              return (
+                <div className="text-center py-6 border-t border-board-wood/50">
+                  <div className="font-display text-lg text-board-parchment mb-4">
+                    Waiting for {defendingPlayer?.name || 'defender'} to select dice...
+                  </div>
+                  <div className="flex justify-center items-center gap-2 text-board-parchment/60">
+                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="text-center py-6 border-t border-board-wood/50">
+                <div className="font-display text-lg text-board-parchment mb-4">
+                  Defender: Select dice count
+                </div>
+                <div className="flex justify-center gap-4">
+                  {[1, 2].map((count) => {
+                    const isAvailable = availableDefenderDice.includes(count);
+                    return (
+                      <button
+                        key={count}
+                        onClick={() => isAvailable && onSelectDefenderDice(count)}
+                        disabled={!isAvailable}
+                        className={`
+                          w-20 h-20 rounded-xl font-display text-2xl font-bold
+                          flex flex-col items-center justify-center gap-1
+                          transition-all duration-150 border-2
+                          ${
+                            isAvailable
+                              ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer border-blue-400 shadow-lg hover:scale-105'
+                              : 'bg-gray-700 text-gray-500 cursor-not-allowed border-gray-600'
+                          }
+                        `}
+                      >
+                        <span className="font-numbers text-3xl">{count}</span>
+                        <span className="text-sm font-body opacity-80">
+                          {count === 1 ? 'die' : 'dice'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="text-sm text-board-parchment/60 mt-4 font-body">
+                  Max: {Math.max(...availableDefenderDice, 0)} dice
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Combat Results */}
-          {subPhase === 'RESOLVE' && combatResult && (
+          {(subPhase === 'MISSILE_WINDOW' || subPhase === 'RESOLVE') && combatResult && (
             <div className="border-t border-board-wood/50 pt-6">
               {/* Initial Dice Display (before pairing) */}
               {(animationPhase === 'idle' || animationPhase === 'rolling' || animationPhase === 'settling') && (
@@ -373,6 +530,8 @@ export function CombatModal({
                           isAttacker={true}
                           animationPhase={animationPhase}
                           dieIndex={i}
+                          isClickable={isMissileActionAvailable && isMissileArmed && !die.isUnmodifiable}
+                          onClick={() => handleUseMissileOnDie('attacker', i)}
                         />
                       ))}
                     </div>
@@ -391,10 +550,46 @@ export function CombatModal({
                           isAttacker={false}
                           animationPhase={animationPhase}
                           dieIndex={i}
+                          isClickable={isMissileActionAvailable && isMissileArmed && !die.isUnmodifiable}
+                          onClick={() => handleUseMissileOnDie('defender', i)}
                         />
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {isMissileActionAvailable && localPlayerMissiles > 0 && (
+                <div className="flex justify-center items-center gap-3 mb-4">
+                  <button
+                    onClick={() => setIsMissileArmed((prev) => !prev)}
+                    disabled={!canLocalPlayerUseMissile}
+                    className={`px-4 py-2 rounded-lg font-display text-sm font-semibold transition-all duration-150 ${
+                      canLocalPlayerUseMissile
+                        ? isMissileArmed
+                          ? 'bg-orange-500 hover:bg-orange-400 text-white cursor-pointer'
+                          : 'bg-orange-700 hover:bg-orange-600 text-white cursor-pointer'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                    title={canLocalPlayerUseMissile ? 'Set one die to 6' : 'No missiles available'}
+                  >
+                    Use Missile ({localPlayerMissiles})
+                  </button>
+                  {subPhase === 'MISSILE_WINDOW' && (
+                      <span className="text-xs text-board-parchment/80 font-body">
+                        Missile window: {(remainingMissileMs / 1000).toFixed(1)}s
+                      </span>
+                  )}
+                  {subPhase === 'RESOLVE' && (
+                    <span className="text-xs text-board-parchment/80 font-body">
+                      Missiles available until combat is finalized
+                    </span>
+                  )}
+                  {isMissileArmed && (
+                    <span className="text-xs text-orange-300 font-body">
+                      Select a die to set it to 6
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -485,19 +680,88 @@ export function CombatModal({
                     )}
                   </div>
 
-                  {/* Continue button with fade in */}
+                  {/* Updated troop counts after combat */}
+                  <div className="flex justify-center gap-8 text-sm font-body mt-2 mb-4">
+                    <div className="text-center">
+                      <div className="text-board-parchment/60">{attackingTerritoryData?.name}</div>
+                      <div className="font-numbers text-lg text-yellow-400">
+                        {attackerRemainingTroops} troops
+                      </div>
+                    </div>
+                    <div className="text-board-parchment/30 self-center">→</div>
+                    <div className="text-center">
+                      <div className="text-board-parchment/60">{defendingTerritoryData?.name}</div>
+                      <div className="font-numbers text-lg text-red-400">
+                        {defenderRemainingTroops} troops
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action buttons with fade in */}
                   <div
-                    className="flex justify-center animate-fade-in-up"
+                    className="flex justify-center gap-3 animate-fade-in-up"
                     style={{ animationDelay: '400ms' }}
                   >
-                    <button
-                      onClick={handleContinue}
-                      className="px-8 py-3 rounded-lg font-display text-lg font-semibold
-                        bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
-                        transition-all duration-150 hover:scale-105"
-                    >
-                      {combatResult.conquestRequired ? 'Move Troops' : 'Continue'}
-                    </button>
+                    {subPhase === 'MISSILE_WINDOW' ? (
+                      <div className="text-sm text-board-parchment/70 font-body">
+                        {isMissileWindowOpen ? 'Waiting for missile window to close...' : 'Missile window closed. Resolving...'}
+                      </div>
+                    ) : (
+                      combatResult.conquestRequired ? (
+                        isLocalAttacker ? (
+                          <button
+                            onClick={handleMoveToTroopMove}
+                            className="px-8 py-3 rounded-lg font-display text-lg font-semibold
+                              bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
+                              transition-all duration-150 hover:scale-105"
+                          >
+                            Move Troops
+                          </button>
+                        ) : (
+                          <div className="text-sm text-board-parchment/70 font-body">
+                            Waiting for {attackingPlayer.name} to move troops...
+                          </div>
+                        )
+                      ) : (
+                        isLocalAttacker ? (
+                          <>
+                            <button
+                              onClick={() => { setIsMissileArmed(false); onAttackAgain(); }}
+                              disabled={!canAttackAgain}
+                              className={`px-6 py-3 rounded-lg font-display text-base font-semibold
+                                transition-all duration-150
+                                ${canAttackAgain
+                                  ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer shadow-lg hover:scale-105'
+                                  : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                                }`}
+                              title={!canAttackAgain ? 'Not enough troops to attack again' : ''}
+                            >
+                              Attack Again
+                            </button>
+                            <button
+                              onClick={() => { setIsMissileArmed(false); onSelectNewTarget(); }}
+                              className="px-6 py-3 rounded-lg font-display text-base font-semibold
+                                bg-yellow-600 hover:bg-yellow-500 text-white cursor-pointer shadow-lg
+                                transition-all duration-150 hover:scale-105"
+                            >
+                              New Target
+                            </button>
+                            <button
+                              onClick={() => { setIsMissileArmed(false); onEndAttacks(); }}
+                              className="px-6 py-3 rounded-lg font-display text-base font-semibold
+                                bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-lg
+                                transition-all duration-150 hover:scale-105"
+                            >
+                              End Attacks
+                            </button>
+                          </>
+                        ) : (
+                          <div className="text-sm text-board-parchment/70 font-body">
+                            Waiting for {attackingPlayer.name} to choose the next action...
+                          </div>
+                        )
+                      )
+                    )}
                   </div>
                 </div>
               )}
@@ -507,137 +771,140 @@ export function CombatModal({
           {/* Troop Movement after Conquest */}
           {subPhase === 'TROOP_MOVE' && (
             <div className="border-t border-board-wood/50 pt-6">
-              <div className="text-center mb-4">
-                <div className="font-display text-xl text-green-400 mb-2 animate-conquest-pulse">
-                  Move troops to conquered territory
-                </div>
-                <div className="text-board-parchment/70 font-body">
-                  From: {attackingTerritoryData?.name} → {defendingTerritoryData?.name}
-                </div>
-              </div>
-
-              {/* Troop count display */}
-              <div className="text-center mb-4">
-                <span className="font-numbers text-5xl text-yellow-400">
-                  {conquestTroopsToMove || conquestTroopRange.min}
-                </span>
-                <div className="text-sm text-board-parchment/60 font-body mt-1">
-                  troops to move
-                </div>
-              </div>
-
-              {/* Range slider with +/- buttons */}
-              <div className="flex items-center justify-center gap-4 mb-4 px-8">
-                <button
-                  onClick={() => onSetConquestTroops(Math.max(conquestTroopRange.min, (conquestTroopsToMove || conquestTroopRange.min) - 1))}
-                  disabled={(conquestTroopsToMove || conquestTroopRange.min) <= conquestTroopRange.min}
-                  className={`
-                    w-10 h-10 rounded-lg font-display text-xl font-bold
-                    transition-all duration-150 flex-shrink-0
-                    ${
-                      (conquestTroopsToMove || conquestTroopRange.min) > conquestTroopRange.min
-                        ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer'
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    }
-                  `}
-                >
-                  -
-                </button>
-
-                {/* Range slider */}
-                <div className="flex-1 max-w-xs">
-                  <input
-                    type="range"
-                    min={conquestTroopRange.min}
-                    max={conquestTroopRange.max}
-                    value={conquestTroopsToMove || conquestTroopRange.min}
-                    onChange={(e) => onSetConquestTroops(parseInt(e.target.value, 10))}
-                    disabled={conquestTroopRange.min === conquestTroopRange.max}
-                    className={`
-                      w-full h-3 rounded-lg appearance-none cursor-pointer
-                      bg-board-wood/50
-                      [&::-webkit-slider-thumb]:appearance-none
-                      [&::-webkit-slider-thumb]:w-6
-                      [&::-webkit-slider-thumb]:h-6
-                      [&::-webkit-slider-thumb]:rounded-full
-                      [&::-webkit-slider-thumb]:bg-yellow-400
-                      [&::-webkit-slider-thumb]:border-2
-                      [&::-webkit-slider-thumb]:border-yellow-600
-                      [&::-webkit-slider-thumb]:cursor-pointer
-                      [&::-webkit-slider-thumb]:shadow-lg
-                      [&::-webkit-slider-thumb]:transition-transform
-                      [&::-webkit-slider-thumb]:hover:scale-110
-                      [&::-moz-range-thumb]:w-6
-                      [&::-moz-range-thumb]:h-6
-                      [&::-moz-range-thumb]:rounded-full
-                      [&::-moz-range-thumb]:bg-yellow-400
-                      [&::-moz-range-thumb]:border-2
-                      [&::-moz-range-thumb]:border-yellow-600
-                      [&::-moz-range-thumb]:cursor-pointer
-                      ${conquestTroopRange.min === conquestTroopRange.max ? 'opacity-50' : ''}
-                    `}
-                  />
-                  <div className="flex justify-between text-xs text-board-parchment/50 font-body mt-1">
-                    <span>Min: {conquestTroopRange.min}</span>
-                    <span>Max: {conquestTroopRange.max}</span>
+              {isLocalAttacker ? (
+                <>
+                  <div className="text-center mb-4">
+                    <div className="font-display text-xl text-green-400 mb-2 animate-conquest-pulse">
+                      Move troops to conquered territory
+                    </div>
+                    <div className="text-board-parchment/70 font-body">
+                      From: {attackingTerritoryData?.name} → {defendingTerritoryData?.name}
+                    </div>
                   </div>
-                </div>
 
-                <button
-                  onClick={() => onSetConquestTroops(Math.min(conquestTroopRange.max, (conquestTroopsToMove || conquestTroopRange.min) + 1))}
-                  disabled={(conquestTroopsToMove || conquestTroopRange.min) >= conquestTroopRange.max}
-                  className={`
-                    w-10 h-10 rounded-lg font-display text-xl font-bold
-                    transition-all duration-150 flex-shrink-0
-                    ${
-                      (conquestTroopsToMove || conquestTroopRange.min) < conquestTroopRange.max
-                        ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    }
-                  `}
-                >
-                  +
-                </button>
-              </div>
+                  <div className="text-center mb-4">
+                    <span className="font-numbers text-5xl text-yellow-400">
+                      {conquestTroopsToMove || conquestTroopRange.min}
+                    </span>
+                    <div className="text-sm text-board-parchment/60 font-body mt-1">
+                      troops to move
+                    </div>
+                  </div>
 
-              {/* Territory troop preview */}
-              <div className="flex justify-center gap-8 mb-6 text-sm font-body">
-                <div className="text-center">
-                  <div className="text-board-parchment/60">
-                    {attackingTerritoryData?.name}
-                  </div>
-                  <div className="font-numbers text-lg text-red-400">
-                    {(attackingTerritoryState?.troopCount || 0) - (conquestTroopsToMove || conquestTroopRange.min)} troops left
-                  </div>
-                </div>
-                <div className="text-board-parchment/30 self-center">→</div>
-                <div className="text-center">
-                  <div className="text-board-parchment/60">
-                    {defendingTerritoryData?.name}
-                  </div>
-                  <div className="font-numbers text-lg text-green-400">
-                    {conquestTroopsToMove || conquestTroopRange.min} troops
-                  </div>
-                </div>
-              </div>
+                  <div className="flex items-center justify-center gap-4 mb-4 px-8">
+                    <button
+                      onClick={() => onSetConquestTroops(Math.max(conquestTroopRange.min, (conquestTroopsToMove || conquestTroopRange.min) - 1))}
+                      disabled={(conquestTroopsToMove || conquestTroopRange.min) <= conquestTroopRange.min}
+                      className={`
+                        w-10 h-10 rounded-lg font-display text-xl font-bold
+                        transition-all duration-150 flex-shrink-0
+                        ${
+                          (conquestTroopsToMove || conquestTroopRange.min) > conquestTroopRange.min
+                            ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer'
+                            : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        }
+                      `}
+                    >
+                      -
+                    </button>
 
-              {/* Confirm button */}
-              <div className="flex justify-center">
-                <button
-                  onClick={onConfirmConquest}
-                  className="px-8 py-3 rounded-lg font-display text-lg font-semibold
-                    bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
-                    transition-all duration-150 hover:scale-105"
-                >
-                  Confirm Conquest
-                </button>
-              </div>
+                    <div className="flex-1 max-w-xs">
+                      <input
+                        type="range"
+                        min={conquestTroopRange.min}
+                        max={conquestTroopRange.max}
+                        value={conquestTroopsToMove || conquestTroopRange.min}
+                        onChange={(e) => onSetConquestTroops(parseInt(e.target.value, 10))}
+                        disabled={conquestTroopRange.min === conquestTroopRange.max}
+                        className={`
+                          w-full h-3 rounded-lg appearance-none cursor-pointer
+                          bg-board-wood/50
+                          [&::-webkit-slider-thumb]:appearance-none
+                          [&::-webkit-slider-thumb]:w-6
+                          [&::-webkit-slider-thumb]:h-6
+                          [&::-webkit-slider-thumb]:rounded-full
+                          [&::-webkit-slider-thumb]:bg-yellow-400
+                          [&::-webkit-slider-thumb]:border-2
+                          [&::-webkit-slider-thumb]:border-yellow-600
+                          [&::-webkit-slider-thumb]:cursor-pointer
+                          [&::-webkit-slider-thumb]:shadow-lg
+                          [&::-webkit-slider-thumb]:transition-transform
+                          [&::-webkit-slider-thumb]:hover:scale-110
+                          [&::-moz-range-thumb]:w-6
+                          [&::-moz-range-thumb]:h-6
+                          [&::-moz-range-thumb]:rounded-full
+                          [&::-moz-range-thumb]:bg-yellow-400
+                          [&::-moz-range-thumb]:border-2
+                          [&::-moz-range-thumb]:border-yellow-600
+                          [&::-moz-range-thumb]:cursor-pointer
+                          ${conquestTroopRange.min === conquestTroopRange.max ? 'opacity-50' : ''}
+                        `}
+                      />
+                      <div className="flex justify-between text-xs text-board-parchment/50 font-body mt-1">
+                        <span>Min: {conquestTroopRange.min}</span>
+                        <span>Max: {conquestTroopRange.max}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => onSetConquestTroops(Math.min(conquestTroopRange.max, (conquestTroopsToMove || conquestTroopRange.min) + 1))}
+                      disabled={(conquestTroopsToMove || conquestTroopRange.min) >= conquestTroopRange.max}
+                      className={`
+                        w-10 h-10 rounded-lg font-display text-xl font-bold
+                        transition-all duration-150 flex-shrink-0
+                        ${
+                          (conquestTroopsToMove || conquestTroopRange.min) < conquestTroopRange.max
+                            ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
+                            : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        }
+                      `}
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <div className="flex justify-center gap-8 mb-6 text-sm font-body">
+                    <div className="text-center">
+                      <div className="text-board-parchment/60">
+                        {attackingTerritoryData?.name}
+                      </div>
+                      <div className="font-numbers text-lg text-red-400">
+                        {(attackingTerritoryState?.troopCount || 0) - (conquestTroopsToMove || conquestTroopRange.min)} troops left
+                      </div>
+                    </div>
+                    <div className="text-board-parchment/30 self-center">→</div>
+                    <div className="text-center">
+                      <div className="text-board-parchment/60">
+                        {defendingTerritoryData?.name}
+                      </div>
+                      <div className="font-numbers text-lg text-green-400">
+                        {conquestTroopsToMove || conquestTroopRange.min} troops
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-center">
+                    <button
+                      onClick={onConfirmConquest}
+                      className="px-8 py-3 rounded-lg font-display text-lg font-semibold
+                        bg-green-600 hover:bg-green-500 text-white cursor-pointer shadow-lg
+                        transition-all duration-150 hover:scale-105"
+                    >
+                      Confirm Conquest
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-4 text-board-parchment/70 font-body">
+                  Waiting for {attackingPlayer.name} to confirm conquest troops...
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Footer - Cancel button (only during certain phases) */}
-        {subPhase === 'DEFENDER_DICE' && (
+        {subPhase === 'DEFENDER_DICE' && isLocalAttacker && (
           <div className="bg-board-wood/30 px-6 py-4 flex justify-center">
             <button
               onClick={onCancel}

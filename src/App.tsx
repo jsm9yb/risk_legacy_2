@@ -5,6 +5,7 @@ import { PlayerSidebar } from './components/game/PlayerSidebar';
 import { ActionBar, ValidationError } from './components/game/ActionBar';
 import { CombatModal } from './components/game/CombatModal';
 import { TurnIndicatorOverlay } from './components/game/TurnIndicatorOverlay';
+import { ManeuverAnimationEvent } from './components/game/territory-units/types';
 import { FactionSelect } from './components/setup/FactionSelect';
 import { HQPlacement } from './components/setup/HQPlacement';
 import { VictoryModal } from './components/game/VictoryModal';
@@ -193,6 +194,7 @@ function App() {
   const [showTurnIndicator, setShowTurnIndicator] = useState(false);
   const prevTurnRef = useRef<{ turn: number; playerId: string | null }>({ turn: 0, playerId: null });
   const [pendingManeuverTroops, setPendingManeuverTroops] = useState(1);
+  const [maneuverAnimation, setManeuverAnimation] = useState<ManeuverAnimationEvent | null>(null);
 
   // Handle game start from multiplayer lobby
   useEffect(() => {
@@ -466,8 +468,34 @@ function App() {
 
   const handleConfirmManeuver = useCallback(() => {
     if (!isMyTurn || phase !== 'MANEUVER' || subPhase !== 'SET_MANEUVER_TROOPS') return;
+
+    if (maneuverSourceTerritory && maneuverTargetTerritory && currentManeuverPath && currentManeuverPath.length >= 2) {
+      const sourceOwnerId = territoryStates[maneuverSourceTerritory]?.ownerId;
+      const sourceOwner = sourceOwnerId ? players.find((player) => player.id === sourceOwnerId) : null;
+
+      setManeuverAnimation({
+        factionId: sourceOwner?.factionId ?? null,
+        sourceTerritoryId: maneuverSourceTerritory,
+        targetTerritoryId: maneuverTargetTerritory,
+        path: [...currentManeuverPath],
+        troopsMoved: pendingManeuverTroops,
+        timestamp: Date.now(),
+      });
+    }
+
     sendGameAction('confirmManeuver', { troops: pendingManeuverTroops });
-  }, [isMyTurn, phase, subPhase, pendingManeuverTroops, sendGameAction]);
+  }, [
+    isMyTurn,
+    phase,
+    subPhase,
+    pendingManeuverTroops,
+    sendGameAction,
+    maneuverSourceTerritory,
+    maneuverTargetTerritory,
+    currentManeuverPath,
+    territoryStates,
+    players,
+  ]);
 
   const handleSkipManeuver = useCallback(() => {
     if (!isMyTurn || phase !== 'MANEUVER') return;
@@ -706,6 +734,7 @@ function App() {
               onAddTroop={handleAddTroop}
               onRemoveTroop={handleRemoveTroop}
               currentManeuverPath={currentManeuverPath}
+              maneuverAnimation={maneuverAnimation}
             />
 
             {/* Turn Change Indicator */}

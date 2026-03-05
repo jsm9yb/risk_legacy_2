@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FactionId } from '@/types/game';
 import { factions, Faction } from '@/data/factions';
 import { FactionEmblem } from '@/components/icons/FactionEmblems';
@@ -14,6 +14,8 @@ interface FactionSelectProps {
   onSelectFaction: (factionId: FactionId, powerId: string) => void;
   /** Callback to cancel selection (optional, for going back) */
   onCancel?: () => void;
+  /** Whether it's the local player's turn to select */
+  isLocalPlayerTurn?: boolean;
 }
 
 /**
@@ -94,13 +96,24 @@ function FactionCard({
  */
 export function FactionSelect({
   isOpen,
+  currentPlayerId,
   currentPlayerName,
   takenFactions,
   onSelectFaction,
   onCancel,
+  isLocalPlayerTurn = true, // Default true for hotseat mode
 }: FactionSelectProps) {
   const [selectedFaction, setSelectedFaction] = useState<Faction | null>(null);
   const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    // Reset stale local selection whenever authority advances setup turn.
+    setSelectedFaction(null);
+    setSelectedPowerId(null);
+  }, [isOpen, currentPlayerId]);
 
   // Filter available factions
   const availableFactions = factions.filter((f) => !takenFactions.includes(f.id));
@@ -129,6 +142,33 @@ export function FactionSelect({
   const canConfirm = selectedFaction !== null && selectedPowerId !== null;
 
   if (!isOpen) return null;
+
+  // Show waiting state if it's not the local player's turn
+  if (!isLocalPlayerTurn) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/80" />
+
+        {/* Waiting Modal */}
+        <div className="relative bg-board-border rounded-xl shadow-2xl border-4 border-board-wood max-w-md w-full mx-4 overflow-hidden">
+          <div className="bg-board-wood px-6 py-5 text-center border-b-2 border-board-border">
+            <h2 className="font-display text-2xl text-board-parchment">FACTION SELECTION</h2>
+          </div>
+          <div className="p-8 text-center">
+            <div className="font-display text-xl text-board-parchment mb-4">
+              Waiting for {currentPlayerName} to select faction...
+            </div>
+            <div className="flex justify-center items-center gap-2 text-board-parchment/60">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <div className="w-2 h-2 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">

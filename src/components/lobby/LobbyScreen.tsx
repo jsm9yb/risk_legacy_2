@@ -4,13 +4,28 @@
 
 import { useCallback, useState } from 'react';
 import { useLobbyStore, LobbyPlayer } from '@/store/lobbyStore';
-import { useSocket } from '@/hooks/useSocket';
 import { ConnectionStatus } from './ConnectionStatus';
 
-export function LobbyScreen() {
+interface LobbyScreenProps {
+  leaveLobby: () => void;
+  setReady: (isReady: boolean) => void;
+  transferHost: (targetSocketId: string) => void;
+  kickPlayer: (targetSocketId: string) => void;
+  startGame: () => void;
+  rejoinGame: (campaignId: string) => boolean;
+  claimSeat: (campaignId: string, targetOdId: string) => boolean;
+}
+
+export function LobbyScreen({
+  leaveLobby,
+  setReady,
+  transferHost,
+  kickPlayer,
+  startGame,
+  rejoinGame,
+  claimSeat,
+}: LobbyScreenProps) {
   const { currentLobby, socketId, lobbyError, setLobbyError } = useLobbyStore();
-  const { leaveLobby, setReady, transferHost, kickPlayer, startGame } =
-    useSocket();
 
   const [confirmKick, setConfirmKick] = useState<string | null>(null);
 
@@ -20,6 +35,8 @@ export function LobbyScreen() {
   const localPlayer = currentLobby?.players.find(
     (p) => p.socketId === socketId
   );
+  const inGameLobby = currentLobby?.status === 'in_game';
+  const localSeatHolder = Boolean(localPlayer?.isSeatHolder);
 
   // Check if all non-host players are ready
   const allReady =
@@ -64,6 +81,19 @@ export function LobbyScreen() {
     window.location.hash = '';
   }, [leaveLobby]);
 
+  const handleRejoinGame = useCallback(() => {
+    if (!currentLobby) return;
+    const ok = rejoinGame(currentLobby.campaignId);
+    if (!ok) {
+      setLobbyError('Unable to rejoin this seat from this browser.');
+    }
+  }, [currentLobby, rejoinGame, setLobbyError]);
+
+  const handleClaimSeat = useCallback((targetOdId: string) => {
+    if (!currentLobby) return;
+    claimSeat(currentLobby.campaignId, targetOdId);
+  }, [currentLobby, claimSeat]);
+
   const handleCopyLink = useCallback(() => {
     if (currentLobby) {
       const url = `${window.location.origin}${window.location.pathname}#/join/${currentLobby.campaignId}`;
@@ -103,8 +133,9 @@ export function LobbyScreen() {
             Game Lobby
           </h2>
           <p className="text-board-parchment/60 font-body mb-4">
-            Waiting for players... ({currentLobby.players.length}/
-            {currentLobby.maxPlayers})
+            {inGameLobby
+              ? 'Active game lobby. Claim a seat to continue.'
+              : `Waiting for players... (${currentLobby.players.length}/${currentLobby.maxPlayers})`}
           </p>
           <button
             onClick={handleCopyLink}
@@ -144,10 +175,12 @@ export function LobbyScreen() {
                 confirmKick={confirmKick}
                 onTransferHost={handleTransferHost}
                 onKickPlayer={handleKickPlayer}
+                showClaimSeat={Boolean(inGameLobby && !localSeatHolder && player.isSeatHolder && !localPlayer?.isSeatHolder)}
+                onClaimSeat={handleClaimSeat}
               />
             ))}
             {/* Empty slots */}
-            {Array.from({
+            {!inGameLobby && Array.from({
               length: currentLobby.maxPlayers - currentLobby.players.length,
             }).map((_, i) => (
               <div
@@ -162,8 +195,23 @@ export function LobbyScreen() {
 
         {/* Actions */}
         <div className="flex flex-col gap-4">
+          {inGameLobby && localSeatHolder && (
+            <button
+              onClick={handleRejoinGame}
+              className="w-full py-4 rounded font-display text-xl transition-colors bg-amber-600 text-white border-2 border-amber-400 hover:bg-amber-500"
+            >
+              Enter Game
+            </button>
+          )}
+
+          {inGameLobby && !localSeatHolder && (
+            <p className="text-center text-amber-300 font-body">
+              Claim one of the seat rows above to enter the active game.
+            </p>
+          )}
+
           {/* Ready button (non-hosts only) */}
-          {!isHost && (
+          {!inGameLobby && !isHost && (
             <button
               onClick={handleToggleReady}
               className={`w-full py-4 rounded font-display text-xl transition-colors ${
@@ -177,7 +225,7 @@ export function LobbyScreen() {
           )}
 
           {/* Start game button (host only) */}
-          {isHost && (
+          {!inGameLobby && isHost && (
             <button
               onClick={handleStartGame}
               disabled={!allReady}
@@ -197,7 +245,7 @@ export function LobbyScreen() {
           )}
 
           {/* Minimum players warning */}
-          {currentLobby.players.length < 2 && (
+          {!inGameLobby && currentLobby.players.length < 2 && (
             <p className="text-center text-amber-400 font-body">
               Need at least 2 players to start
             </p>
@@ -215,6 +263,8 @@ interface PlayerRowProps {
   confirmKick: string | null;
   onTransferHost: (socketId: string) => void;
   onKickPlayer: (socketId: string) => void;
+  showClaimSeat?: boolean;
+  onClaimSeat?: (odId: string) => void;
 }
 
 function PlayerRow({
@@ -224,6 +274,8 @@ function PlayerRow({
   confirmKick,
   onTransferHost,
   onKickPlayer,
+  showClaimSeat = false,
+  onClaimSeat,
 }: PlayerRowProps) {
   return (
     <div
@@ -280,6 +332,15 @@ function PlayerRow({
             {confirmKick === player.socketId ? 'Confirm?' : 'Kick'}
           </button>
         </div>
+      )}
+
+      {showClaimSeat && onClaimSeat && (
+        <button
+          onClick={() => onClaimSeat(player.odId)}
+          className="px-3 py-1 text-sm bg-amber-700 text-white font-body rounded border border-amber-400 hover:bg-amber-600 transition-colors"
+        >
+          Claim Seat
+        </button>
       )}
 
       {/* Ready status text for non-host view */}

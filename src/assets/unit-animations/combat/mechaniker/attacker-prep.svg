@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 128">
+  <defs>
+    <style>
+      .bg { fill: rgba(15,23,42,0.35); stroke: rgba(248,250,252,0.15); }
+      .unit { fill: #4A90A4; stroke: rgba(255,255,255,0.85); stroke-width: 2; }
+      .accent { fill: rgba(255,255,255,0.85); }
+      .trail { stroke: #4A90A4; stroke-width: 4; stroke-linecap: round; opacity: 0.55; }
+      .pulse { opacity: .55; transform-origin: 128px 64px; animation: pulse 900ms ease-in-out infinite alternate; }
+      .bob { animation: bob 650ms ease-in-out infinite alternate; }
+      .slideA { animation: slideA 1100ms ease-in-out infinite; }
+      .slideB { animation: slideB 1100ms ease-in-out infinite; }
+      @keyframes bob { from { transform: translateY(0px); } to { transform: translateY(-4px); } }
+      @keyframes pulse { from { transform: scale(0.98); opacity: .35; } to { transform: scale(1.02); opacity: .7; } }
+      @keyframes slideA { 0% { transform: translateX(0px); } 50% { transform: translateX(10px); } 100% { transform: translateX(0px); } }
+      @keyframes slideB { 0% { transform: translateX(0px); } 50% { transform: translateX(-10px); } 100% { transform: translateX(0px); } }
+    </style>
+  </defs>
+  <rect x="4" y="4" width="248" height="120" rx="14" class="bg"/>
+  <g class="pulse">
+    <ellipse cx="128" cy="64" rx="108" ry="38" fill="#4A90A4" opacity="0.10"/>
+  </g>
+  <path d="M34 98 Q 128 20 222 98" class="trail" fill="none" stroke-dasharray="8 7">
+    <animate attributeName="stroke-dashoffset" values="0;-30" dur="0.8s" repeatCount="indefinite"/>
+  </path>
+  <g class="slideA">
+    <circle cx="76" cy="70" r="16" class="unit bob"/>
+    <rect x="58" y="88" width="36" height="10" rx="5" class="accent" opacity="0.25"/>
+  </g>
+  <g class="slideB">
+    <path d="M168 80 L188 44 L208 80 Z" class="unit bob"/>
+    <rect x="170" y="88" width="36" height="10" rx="5" class="accent" opacity="0.25"/>
+  </g>
+  <text x="128" y="26" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-family="Oswald, sans-serif" font-weight="700" font-size="14">MECHANIKER ATTACKER PREP</text>
+</svg>
